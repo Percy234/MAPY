@@ -1,7 +1,20 @@
 // API Configuration
 class ApiConfig {
+  // Key cho Map Tiles/Style (dung cho hien thi ban do)
+  static const String goongMapKey = '91Pd3dmOSP5ndlCP5gF6J8tMuZpO22tOigCEyQQv';
+
+  // Key cho REST API (geocode, direction, place, ...)
   static const String goongApiKey = 'RenfdlU86rE2N4ZsZhwyWZWe37XQ3KETffhGfxyq';
   static const String goongBaseUrl = 'https://rsapi.goong.io';
+
+  static bool get isGoongConfigured =>
+    goongMapKey.isNotEmpty;
+
+  static String get goongStreetStyleUrl =>
+    'https://tiles.goong.io/assets/goong_map_web.json?api_key=$goongMapKey';
+
+  static String get goongSatelliteStyleUrl =>
+    'https://tiles.goong.io/assets/goong_satellite.json?api_key=$goongMapKey';
   
   static const int connectionTimeout = 30000; // 30 giây
   static const int receiveTimeout = 30000;

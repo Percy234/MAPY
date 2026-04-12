@@ -1,7 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 import '../models/place_model.dart';
 import '../models/route_model.dart';
 import '../providers/location_provider.dart';
@@ -17,18 +19,16 @@ class MapScreen extends ConsumerStatefulWidget {
 }
 
 class _MapScreenState extends ConsumerState<MapScreen> {
-  late MapController _mapController;
+  MapLibreMapController? _mapController;
   bool _isTrackingEnabled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _mapController = MapController();
-  }
+  bool _isSatelliteView = false;
+  bool _isStyleLoaded = false;
+  bool _isSyncingMapData = false;
+  final Map<dynamic, PlaceModel> _placeByCircleId = <dynamic, PlaceModel>{};
 
   @override
   void dispose() {
-    _mapController.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -39,10 +39,31 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final locationStream = ref.watch(locationStreamProvider);
     final routes = ref.watch(allRoutesProvider);
 
+    locationStream.whenData(_buildLocationUpdater);
+
+    if (currentLocation != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncMapData(
+          currentLocation: currentLocation,
+          places: places,
+          routes: routes.valueOrNull ?? const <RouteModel>[],
+        );
+      });
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bản Đồ'),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isSatelliteView ? Icons.layers_clear : Icons.satellite_alt,
+            ),
+            tooltip: _isSatelliteView
+                ? 'Chuyển sang bản đồ đường phố'
+                : 'Chuyển sang bản đồ vệ tinh',
+            onPressed: _toggleMapStyle,
+          ),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Center(
@@ -59,64 +80,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       body: currentLocation == null
           ? const Center(child: CircularProgressIndicator())
+          : !ApiConfig.isGoongConfigured
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Bạn chưa cấu hình Goong Map key.\n'
+                      'Hãy cập nhật ApiConfig.goongMapKey trong lib/utils/constants.dart',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
           : Stack(
               children: [
-                // Flutter Map
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: LatLng(
-                      currentLocation.latitude,
-                      currentLocation.longitude,
-                    ),
-                    initialZoom: 15,
-                  ),
-                  children: [
-                    // 1. Lớp bản đồ
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.percy.mapy',
-                    ),
-
-                    // 2. Lớp bản quyền
-                    RichAttributionWidget(
-                      attributions: [
-                        TextSourceAttribution(
-                          'OpenStreetMap contributors',
-                          onTap: () => {},
-                        ),
-                      ],
-                    ),
-
-                    // 3. Lớp Polylines (Routes)
-                    routes.when(
-                      data: (routeList) {
-                        return PolylineLayer(
-                          polylines: _buildPolylines(routeList),
-                        );
-                      },
-                      loading: () => PolylineLayer(polylines: []),
-                      error: (_, _) => PolylineLayer(polylines: []),
-                    ),
-
-                    // 4. Lớp Marker
-                    MarkerLayer(
-                      markers: _buildMarkers(currentLocation, places),
-                    ),
-                  ],
-                ),
-
-                // Location tracking listener
-                if (locationStream.when(
-                  data: (location) {
-                    _buildLocationUpdater(location);
-                    return true;
-                  },
-                  loading: () => false,
-                  error: (_, _) => false,
-                ))
-                  _buildLocationUpdater(locationStream.value!),
+                _buildMap(currentLocation),
 
                 // Bottom info panel
                 Positioned(
@@ -154,104 +131,144 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
-  // 🎨 Vẽ Polylines từ routes
-  List<Polyline> _buildPolylines(List<RouteModel> routes) {
-    return routes.map((route) {
-      return Polyline(
-        points: [
-          LatLng(route.startLatitude, route.startLongitude),
-          LatLng(route.endLatitude, route.endLongitude),
-        ],
-        color: Colors.blue,
-        strokeWidth: 4,
-        borderStrokeWidth: 2,
-        borderColor: Colors.white,
-      );
-    }).toList();
-  }
+  Widget _buildMap(LocationModel currentLocation) {
+    final styleString = _resolveMapStyleString();
 
-  List<Marker> _buildMarkers(
-    LocationModel currentLocation,
-    List<PlaceModel> places,
-  ) {
-    final markers = <Marker>[];
-
-    // Current location marker
-    markers.add(
-      Marker(
-        point: LatLng(
+    return MapLibreMap(
+      key: ValueKey<String>('goong-${_isSatelliteView ? 'sat' : 'street'}'),
+      styleString: styleString,
+      initialCameraPosition: CameraPosition(
+        target: LatLng(
           currentLocation.latitude,
           currentLocation.longitude,
         ),
-        child: SizedBox(
-          width: 50,
-          height: 50,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.blue,
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 4,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: const Icon(Icons.location_on, color: Colors.white),
+        zoom: 15,
+      ),
+      minMaxZoomPreference: const MinMaxZoomPreference(3, 20),
+      myLocationEnabled: !kIsWeb,
+      myLocationTrackingMode: MyLocationTrackingMode.none,
+      compassEnabled: true,
+      onMapCreated: _onMapCreated,
+      onStyleLoadedCallback: _onStyleLoaded,
+    );
+  }
+
+  void _onMapCreated(MapLibreMapController controller) {
+    _mapController = controller;
+    controller.onCircleTapped.add(_onCircleTapped);
+  }
+
+  void _onStyleLoaded() {
+    _isStyleLoaded = true;
+
+    final currentLocation = ref.read(currentLocationProvider);
+    if (currentLocation == null) {
+      return;
+    }
+
+    unawaited(
+      _syncMapData(
+        currentLocation: currentLocation,
+        places: ref.read(placesProvider),
+        routes: ref.read(allRoutesProvider).valueOrNull ?? const <RouteModel>[],
+      ),
+    );
+  }
+
+  String _resolveMapStyleString() {
+    return _isSatelliteView
+        ? ApiConfig.goongSatelliteStyleUrl
+        : ApiConfig.goongStreetStyleUrl;
+  }
+
+  Future<void> _syncMapData({
+    required LocationModel currentLocation,
+    required List<PlaceModel> places,
+    required List<RouteModel> routes,
+  }) async {
+    if (_isSyncingMapData || !_isStyleLoaded) {
+      return;
+    }
+
+    final controller = _mapController;
+    if (controller == null) {
+      return;
+    }
+
+    _isSyncingMapData = true;
+
+    try {
+      await controller.clearLines();
+      await controller.clearCircles();
+      _placeByCircleId.clear();
+
+      for (final route in routes) {
+        await controller.addLine(
+          LineOptions(
+            geometry: <LatLng>[
+              LatLng(route.startLatitude, route.startLongitude),
+              LatLng(route.endLatitude, route.endLongitude),
+            ],
+            lineColor: '#2962FF',
+            lineWidth: 4,
+            lineOpacity: 0.9,
           ),
+        );
+      }
+
+      await controller.addCircle(
+        CircleOptions(
+          geometry: LatLng(currentLocation.latitude, currentLocation.longitude),
+          circleRadius: 9,
+          circleColor: '#1E88E5',
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2,
+          circleOpacity: 0.95,
+        ),
+      );
+
+      for (final place in places) {
+        final circle = await controller.addCircle(
+          CircleOptions(
+            geometry: LatLng(place.latitude, place.longitude),
+            circleRadius: 7,
+            circleColor: _getPlaceMarkerHexColor(place.placeType),
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 1.5,
+            circleOpacity: 0.95,
+          ),
+        );
+        _placeByCircleId[circle.id] = place;
+      }
+    } finally {
+      _isSyncingMapData = false;
+    }
+  }
+
+  void _onCircleTapped(Circle circle) {
+    final place = _placeByCircleId[circle.id];
+    if (place != null) {
+      _showPlaceDetail(place);
+    }
+  }
+
+  void _buildLocationUpdater(LocationModel location) {
+    if (!_isTrackingEnabled) {
+      return;
+    }
+
+    final controller = _mapController;
+    if (controller == null) {
+      return;
+    }
+
+    unawaited(
+      controller.animateCamera(
+        CameraUpdate.newLatLng(
+          LatLng(location.latitude, location.longitude),
         ),
       ),
     );
-
-    // Place markers
-    for (final place in places) {
-      final color = _getPlaceMarkerColor(place.placeType);
-      markers.add(
-        Marker(
-          point: LatLng(place.latitude, place.longitude),
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: GestureDetector(
-              onTap: () => _showPlaceDetail(place),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: Center(
-                  child: Text(
-                    place.name.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return markers;
-  }
-
-  Widget _buildLocationUpdater(LocationModel location) {
-    // Cập nhật bản đồ khi vị trí thay đổi (nếu tracking bật)
-    if (_isTrackingEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController.move(
-          LatLng(location.latitude, location.longitude),
-          _mapController.camera.zoom,
-        );
-      });
-    }
-    return const SizedBox.shrink();
   }
 
   Widget _buildInfoPanel(LocationModel location) {
@@ -298,10 +315,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _centerOnCurrentLocation() {
     final location = ref.read(currentLocationProvider);
-    if (location != null) {
-      _mapController.move(
-        LatLng(location.latitude, location.longitude),
-        15,
+    final controller = _mapController;
+    if (location != null && controller != null) {
+      unawaited(
+        controller.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(location.latitude, location.longitude),
+            15,
+          ),
+        ),
       );
     }
   }
@@ -343,20 +365,36 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
-  Color _getPlaceMarkerColor(PlaceType placeType) {
+  void _toggleMapStyle() {
+    setState(() {
+      _isSatelliteView = !_isSatelliteView;
+      _isStyleLoaded = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isSatelliteView ? 'Đã chuyển sang bản đồ vệ tinh' : 'Đã chuyển sang bản đồ đường phố',
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  String _getPlaceMarkerHexColor(PlaceType placeType) {
     switch (placeType) {
       case PlaceType.home:
-        return Colors.red;
+        return '#D32F2F';
       case PlaceType.workplace:
-        return Colors.orange;
+        return '#F57C00';
       case PlaceType.restaurant:
-        return Colors.green;
+        return '#388E3C';
       case PlaceType.cafe:
-        return Colors.brown;
+        return '#5D4037';
       case PlaceType.shop:
-        return Colors.purple;
+        return '#7B1FA2';
       case PlaceType.other:
-        return Colors.grey;
+        return '#616161';
     }
   }
 }
