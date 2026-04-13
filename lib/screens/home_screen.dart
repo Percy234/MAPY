@@ -11,22 +11,38 @@ class HomeScreen extends ConsumerWidget {
     final places = ref.watch(placesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('MAPY'),
-        elevation: 0,
-      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const SizedBox(height: 16),
-          Text(
-            'Tổng quan hôm nay',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
           const SizedBox(height: 8),
-          Text(
-            'Theo dõi nhanh quãng đường và các điểm đã ghé trong ngày.',
-            style: Theme.of(context).textTheme.bodyMedium,
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'MAPY',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tổng quan hôm nay',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Theo dõi nhanh quãng đường và các điểm đã ghé trong ngày.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           _buildCard(
