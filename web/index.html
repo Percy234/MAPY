@@ -20,10 +20,13 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
 
-  <!-- MapLibre GL JS runtime is required by maplibre_gl on Flutter Web -->
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <!-- MapLibre GL CSS (both CDNs to reduce runtime breakage when one is blocked) -->
   <link
     href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css"
     rel="stylesheet"
   />
 
@@ -48,6 +51,66 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    (function () {
+      const mapLibreSources = [
+        'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js',
+        'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js'
+      ];
+
+      function hasMapLibreRuntime() {
+        return (
+          typeof window.maplibregl !== 'undefined' &&
+          typeof window.maplibregl.LngLat !== 'undefined'
+        );
+      }
+
+      function normalizeGlobalName() {
+        if (typeof window.maplibregl === 'undefined' && typeof window.maplibre !== 'undefined') {
+          window.maplibregl = window.maplibre;
+        }
+      }
+
+      function startFlutter() {
+        const script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.async = true;
+        document.body.appendChild(script);
+      }
+
+      function loadMapLibre(index) {
+        normalizeGlobalName();
+        if (hasMapLibreRuntime()) {
+          startFlutter();
+          return;
+        }
+
+        if (index >= mapLibreSources.length) {
+          console.error(
+            '[MAPY] MapLibre runtime was not loaded. Map view may fail to initialize.'
+          );
+          startFlutter();
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = mapLibreSources[index];
+        script.onload = function () {
+          normalizeGlobalName();
+          if (hasMapLibreRuntime()) {
+            startFlutter();
+          } else {
+            loadMapLibre(index + 1);
+          }
+        };
+        script.onerror = function () {
+          loadMapLibre(index + 1);
+        };
+        document.head.appendChild(script);
+      }
+
+      loadMapLibre(0);
+    })();
+  </script>
 </body>
 </html>

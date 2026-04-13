@@ -1,6 +1,9 @@
+import 'dart:convert';
 import '../models/place_model.dart';
 import '../services/location_service.dart';
 import '../utils/constants.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'dart:math' as math;
 
 class PlaceDetectionService {
@@ -25,10 +28,17 @@ class PlaceDetectionService {
       } else {
         // Nếu không có match, tạo place mới
         final suggestedType = _suggestPlaceType(cluster);
-        final newPlace = PlaceModel.fromPlaceType(
-          name: _generatePlaceName(suggestedType),
+        final resolvedStop = await _resolveNearestStopPoint(
           latitude: cluster.latitude,
           longitude: cluster.longitude,
+          placeType: suggestedType,
+        );
+
+        final newPlace = PlaceModel.fromPlaceType(
+          name: resolvedStop.name,
+          latitude: cluster.latitude,
+          longitude: cluster.longitude,
+          address: resolvedStop.address,
           placeType: suggestedType,
           radius: 100, // Mặc định 100m
         );
@@ -96,6 +106,110 @@ class PlaceDetectionService {
     return PlaceType.other;
   }
 
+  /// Với nhà/nơi làm việc giữ tên chuẩn.
+  /// Các loại còn lại lấy theo POI gần nhất, nếu không có thì fallback địa chỉ gần nhất.
+  static Future<_ResolvedStopPoint> _resolveNearestStopPoint({
+    required double latitude,
+    required double longitude,
+    required PlaceType placeType,
+  }) async {
+    if (placeType == PlaceType.home || placeType == PlaceType.workplace) {
+      return _ResolvedStopPoint(name: _generatePlaceName(placeType));
+    }
+
+    final geocodeResult = await _reverseGeocode(
+      latitude: latitude,
+      longitude: longitude,
+    );
+
+    if (geocodeResult == null) {
+      return _ResolvedStopPoint(name: _generatePlaceName(placeType));
+    }
+
+    final resolvedName =
+        _extractBestNameFromGeocode(geocodeResult) ??
+        _generatePlaceName(placeType);
+    final address = (geocodeResult['formatted_address'] as String?)?.trim();
+
+    return _ResolvedStopPoint(
+      name: resolvedName,
+      address: (address == null || address.isEmpty) ? null : address,
+    );
+  }
+
+  static Future<Map<String, dynamic>?> _reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async {
+    if (!ApiConfig.isGoongRestConfigured) {
+      return null;
+    }
+
+    final uri = Uri.parse('${ApiConfig.goongBaseUrl}/Geocode').replace(
+      queryParameters: {
+        'latlng': '$latitude,$longitude',
+        'api_key': ApiConfig.goongApiKey,
+      },
+    );
+
+    try {
+      final response = await http
+          .get(uri)
+          .timeout(Duration(milliseconds: ApiConfig.connectionTimeout));
+
+      if (response.statusCode != 200) {
+        debugPrint('Reverse geocode failed: ${response.statusCode}');
+        return null;
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+
+      final results = decoded['results'];
+      if (results is! List) {
+        return null;
+      }
+
+      for (final item in results) {
+        if (item is Map<String, dynamic>) {
+          final candidateName = _extractBestNameFromGeocode(item);
+          final candidateAddress =
+              (item['formatted_address'] as String?)?.trim() ?? '';
+          if (candidateName != null || candidateAddress.isNotEmpty) {
+            return item;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Reverse geocode error: $e');
+    }
+
+    return null;
+  }
+
+  static String? _extractBestNameFromGeocode(Map<String, dynamic> item) {
+    final components = item['address_components'];
+    if (components is List) {
+      for (final component in components) {
+        if (component is Map<String, dynamic>) {
+          final longName = (component['long_name'] as String?)?.trim();
+          if (longName != null && longName.isNotEmpty) {
+            return longName;
+          }
+        }
+      }
+    }
+
+    final formattedAddress = (item['formatted_address'] as String?)?.trim();
+    if (formattedAddress == null || formattedAddress.isEmpty) {
+      return null;
+    }
+
+    return formattedAddress.split(',').first.trim();
+  }
+
   /// Tạo tên địa điểm dựa trên loại
   static String _generatePlaceName(PlaceType type) {
     switch (type) {
@@ -141,4 +255,14 @@ class PlaceDetectionService {
   static double _toRadians(double degree) {
     return degree * (math.pi / 180);
   }
+}
+
+class _ResolvedStopPoint {
+  const _ResolvedStopPoint({
+    required this.name,
+    this.address,
+  });
+
+  final String name;
+  final String? address;
 }

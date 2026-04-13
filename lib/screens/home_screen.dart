@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/location_provider.dart';
-import '../screens/map_screen.dart';
-import '../screens/travel_expense_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -20,6 +18,16 @@ class HomeScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const SizedBox(height: 16),
+          Text(
+            'Tổng quan hôm nay',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Theo dõi nhanh quãng đường và các điểm đã ghé trong ngày.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
           const SizedBox(height: 16),
           _buildCard(
             context,
@@ -41,51 +49,23 @@ class HomeScreen extends ConsumerWidget {
             icon: Icons.location_on,
             color: Colors.greenAccent,
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Chức Năng',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
           const SizedBox(height: 12),
-          _buildMenuButton(
-            context,
-            title: 'Bản Đồ',
-            subtitle: 'Theo dõi vị trí',
-            icon: Icons.map,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MapScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          _buildMenuButton(
-            context,
-            title: 'Địa Điểm',
-            subtitle: 'Danh sách địa điểm',
-            icon: Icons.place,
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('⏳ Chức năng đang phát triển')),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          _buildMenuButton(
-            context,
-            title: 'Thống Kê',
-            subtitle: 'Phân tích chi phí xăng',
-            icon: Icons.bar_chart,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TravelExpenseScreen()),
-              );
-            },
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Icon(Icons.tips_and_updates, color: Colors.blueAccent),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Dùng thanh điều hướng bên dưới để chuyển nhanh giữa Di chuyển, Chi phí và Cá nhân.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -134,24 +114,6 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildMenuButton(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, size: 32),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
       ),
     );
   }

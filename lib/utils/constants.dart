@@ -10,6 +10,9 @@ class ApiConfig {
   static bool get isGoongConfigured =>
     goongMapKey.isNotEmpty;
 
+  static bool get isGoongRestConfigured =>
+    goongApiKey.isNotEmpty;
+
   static String get goongStreetStyleUrl =>
     'https://tiles.goong.io/assets/goong_map_web.json?api_key=$goongMapKey';
 
@@ -25,6 +28,9 @@ class LocationConfig {
   static const int minStayDuration = 300000; // 5 phút (ms)
   static const double distanceThreshold = 50; // 50 mét
   static const int updateInterval = 10000; // 10 giây
+  static const double liveTraceMinDistanceMeters = 8; // Vẽ line mỗi >= 8m
+  static const double minRouteSaveDistanceMeters = 30; // Chỉ lưu route >= 30m
+  static const int stayPointDetectionIntervalSeconds = 45; // Quét điểm dừng định kỳ
 }
 
 // Database Configuration

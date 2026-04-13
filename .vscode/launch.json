@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MAPY Web (Chrome Persistent)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--web-hostname=localhost",
+        "--web-port=7357",
+        "--web-browser-flag=--user-data-dir=${workspaceFolder}/.vscode/chrome-profile"
+      ]
+    },
+    {
+      "name": "MAPY Web (Web Server Persistent)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "web-server",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--web-hostname=localhost",
+        "--web-port=7357"
+      ]
+    }
+  ]
+}

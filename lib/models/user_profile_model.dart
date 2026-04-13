@@ -14,6 +14,8 @@ enum Gender {
 
 @HiveType(typeId: 7)
 class UserProfileModel extends HiveObject {
+  static const Object _keepValue = Object();
+
   @HiveField(0)
   final String id;
 
@@ -43,8 +45,8 @@ class UserProfileModel extends HiveObject {
     DateTime? createdAt,
     this.modifiedAt,
     this.isSetupComplete = false,
-  })  : id = id ?? const Uuid().v4(),
-        createdAt = createdAt ?? DateTime.now();
+  }) : id = id ?? const Uuid().v4(),
+       createdAt = createdAt ?? DateTime.now();
 
   Gender get gender => Gender.values[genderIndex];
 
@@ -67,14 +69,16 @@ class UserProfileModel extends HiveObject {
   UserProfileModel copyWith({
     String? fullName,
     Gender? gender,
-    String? activeVehicleId,
+    Object? activeVehicleId = _keepValue,
     bool? isSetupComplete,
   }) {
     return UserProfileModel(
       id: id,
       fullName: fullName ?? this.fullName,
       genderIndex: gender?.index ?? genderIndex,
-      activeVehicleId: activeVehicleId ?? this.activeVehicleId,
+      activeVehicleId: identical(activeVehicleId, _keepValue)
+          ? this.activeVehicleId
+          : activeVehicleId as String?,
       createdAt: createdAt,
       modifiedAt: DateTime.now(),
       isSetupComplete: isSetupComplete ?? this.isSetupComplete,

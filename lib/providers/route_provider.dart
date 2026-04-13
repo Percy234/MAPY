@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/route_model.dart';
 import '../repositories/route_repository.dart';
 
-final routeRepositoryProvider = Provider((ref) => RouteRepository());
+final routeRepositoryProvider = Provider<RouteRepository>((ref) => RouteRepository());
 
 final allRoutesProvider = FutureProvider<List<RouteModel>>((ref) async {
   final repository = ref.watch(routeRepositoryProvider);

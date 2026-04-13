@@ -4,15 +4,26 @@ import '../utils/constants.dart';
 import '../utils/hive_manager.dart';
 
 class VehicleRepository {
-  Box<VehicleModel> get _box => HiveManager.getBox<VehicleModel>(DatabaseConfig.vehiclesBox);
+  Box<VehicleModel> get _box =>
+      HiveManager.getBox<VehicleModel>(DatabaseConfig.vehiclesBox);
 
-  Future<void> add(VehicleModel vehicle) async => _box.put(vehicle.id, vehicle);
+  Future<void> add(VehicleModel vehicle) async {
+    await _box.put(vehicle.id, vehicle);
+    await _box.flush();
+  }
 
-  Future<void> addVehicle(VehicleModel vehicle) async => _box.put(vehicle.id, vehicle);
-  
-  Future<void> deleteVehicle(String id) async => _box.delete(id);
-  
-  Future<List<VehicleModel>> getAllVehicles() async => _box.values.toList();
-  
+  Future<void> addVehicle(VehicleModel vehicle) async {
+    await _box.put(vehicle.id, vehicle);
+    await _box.flush();
+  }
+
+  Future<void> deleteVehicle(String id) async {
+    await _box.delete(id);
+    await _box.flush();
+  }
+
+  Future<List<VehicleModel>> getAllVehicles() async =>
+      _box.values.toList(growable: false);
+
   Future<VehicleModel?> getVehicleById(String id) async => _box.get(id);
 }

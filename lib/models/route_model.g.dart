@@ -30,13 +30,14 @@ class RouteModelAdapter extends TypeAdapter<RouteModel> {
       routeTypeIndex: fields[10] as int,
       lastTraveledCount: fields[11] as int,
       lastTraveledDate: fields[12] as DateTime?,
+      traceCoordinates: (fields[13] as List?)?.cast<double>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, RouteModel obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -62,7 +63,9 @@ class RouteModelAdapter extends TypeAdapter<RouteModel> {
       ..writeByte(11)
       ..write(obj.lastTraveledCount)
       ..writeByte(12)
-      ..write(obj.lastTraveledDate);
+        ..write(obj.lastTraveledDate)
+        ..writeByte(13)
+        ..write(obj.traceCoordinates);
   }
 
   @override

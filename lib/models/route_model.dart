@@ -45,6 +45,9 @@ class RouteModel extends HiveObject {
   @HiveField(12)
   final DateTime lastTraveledDate;
 
+  @HiveField(13)
+  final List<double>? traceCoordinates; // Flattened [lat1, lon1, lat2, lon2, ...]
+
   RouteModel({
     String? id,
     this.startPlaceId,
@@ -59,6 +62,7 @@ class RouteModel extends HiveObject {
     required this.routeTypeIndex,
     this.lastTraveledCount = 1,
     DateTime? lastTraveledDate,
+    this.traceCoordinates,
   })  : id = id ?? const Uuid().v4(),
         lastTraveledDate = lastTraveledDate ?? DateTime.now();
 
@@ -76,6 +80,7 @@ class RouteModel extends HiveObject {
     required RouteType routeType,
     int lastTraveledCount = 1,
     DateTime? lastTraveledDate,
+    List<double>? traceCoordinates,
   }) {
     return RouteModel(
       id: id,
@@ -91,6 +96,7 @@ class RouteModel extends HiveObject {
       routeTypeIndex: routeType.index,
       lastTraveledCount: lastTraveledCount,
       lastTraveledDate: lastTraveledDate,
+      traceCoordinates: traceCoordinates,
     );
   }
 
@@ -126,6 +132,7 @@ class RouteModel extends HiveObject {
     RouteType? routeType,
     int? lastTraveledCount,
     DateTime? lastTraveledDate,
+    List<double>? traceCoordinates,
   }) {
     return RouteModel(
       id: id ?? this.id,
@@ -142,6 +149,7 @@ class RouteModel extends HiveObject {
       routeTypeIndex: routeType?.index ?? this.routeTypeIndex,
       lastTraveledCount: lastTraveledCount ?? this.lastTraveledCount,
       lastTraveledDate: lastTraveledDate ?? this.lastTraveledDate,
+      traceCoordinates: traceCoordinates ?? this.traceCoordinates,
     );
   }
 
