@@ -56,6 +56,9 @@ class HomeScreen extends ConsumerWidget {
             ),
             icon: Icons.directions,
             color: Colors.blueAccent,
+            hideIcon: true,
+            emphasizedValue: true,
+            subtitle: 'Nhiên liệu: 0.00L',
           ),
           const SizedBox(height: 12),
           _buildCard(
@@ -94,22 +97,26 @@ class HomeScreen extends ConsumerWidget {
     required String value,
     required IconData icon,
     required Color color,
+    bool hideIcon = false,
+    bool emphasizedValue = false,
+    String? subtitle,
   }) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
+            if (!hideIcon)
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 28),
               ),
-              child: Icon(icon, color: color, size: 28),
-            ),
-            const SizedBox(width: 16),
+            if (!hideIcon) const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,10 +128,23 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     value,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: color,
-                    ),
+                    style: emphasizedValue
+                        ? Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w800,
+                          )
+                        : Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: color,
+                          ),
                   ),
+                  if (subtitle != null) const SizedBox(height: 4),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.black54,
+                      ),
+                    ),
                 ],
               ),
             ),

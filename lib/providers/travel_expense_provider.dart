@@ -1,11 +1,33 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/expense_model.dart';
+import '../models/vehicle_model.dart';
+import '../repositories/user_profile_repository.dart';
+import '../repositories/vehicle_repository.dart';
 import '../services/travel_expense_service.dart';
 import '../services/petrolimex_service.dart';
 
 final travelExpenseServiceProvider = Provider((ref) => TravelExpenseService());
 
 final petrolimexServiceProvider = Provider((ref) => PetrolimexService());
+final userProfileRepositoryProvider = Provider(
+  (ref) => UserProfileRepository(),
+);
+final vehicleRepositoryProvider = Provider((ref) => VehicleRepository());
+
+final selectedFuelZoneProvider = StateProvider<int>((ref) => 1);
+
+final activeVehicleProvider = FutureProvider<VehicleModel?>((ref) async {
+  final profileRepository = ref.watch(userProfileRepositoryProvider);
+  final vehicleRepository = ref.watch(vehicleRepositoryProvider);
+
+  final profile = await profileRepository.getProfile();
+  final activeVehicleId = profile?.activeVehicleId;
+  if (activeVehicleId == null || activeVehicleId.isEmpty) {
+    return null;
+  }
+
+  return vehicleRepository.getVehicleById(activeVehicleId);
+});
 
 // Chi phí xăng hôm nay
 final todayFuelCostProvider = FutureProvider<double>((ref) async {
