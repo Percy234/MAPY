@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/location_model.dart';
 import '../models/place_model.dart';
@@ -57,17 +59,30 @@ final placesProvider = StateNotifierProvider<PlacesNotifier, List<PlaceModel>>((
 
 class CurrentLocationNotifier extends StateNotifier<LocationModel?> {
   final LocationService _service;
+  StreamSubscription<LocationModel>? _locationSubscription;
 
-  CurrentLocationNotifier(this._service) : super(null) {
-    updateCurrentLocation();
+  CurrentLocationNotifier(this._service) : super(_service.currentLocation) {
+    _locationSubscription = _service.locationStream.listen((location) {
+      state = location;
+    });
+    unawaited(updateCurrentLocation());
   }
 
   Future<void> updateCurrentLocation() async {
     try {
-      state = await _service.getCurrentLocation();
+      final latestLocation = await _service.getCurrentLocation();
+      if (latestLocation != null) {
+        state = latestLocation;
+      }
     } catch (e) {
       // Xử lý lỗi nếu cần (ví dụ: chưa cấp quyền GPS)
     }
+  }
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
   }
 }
 

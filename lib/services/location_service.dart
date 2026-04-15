@@ -24,16 +24,42 @@ class LocationService {
   List<LocationModel> get locationHistory => List.unmodifiable(_locationHistory);
   LocationModel? get currentLocation => _currentLocation;
 
+  void _handlePosition(Position position) {
+    _currentLocation = LocationModel(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      timestamp: DateTime.now(),
+      accuracy: position.accuracy,
+      altitude: position.altitude,
+      speed: position.speed,
+    );
+
+    _locationHistory.add(_currentLocation!);
+    if (!_locationStreamController.isClosed) {
+      _locationStreamController.add(_currentLocation!);
+    }
+  }
+
   /// Kiểm tra quyền truy cập vị trí
   Future<bool> requestLocationPermission() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint('Quyen vi tri bi tu choi vinh vien');
+        return false;
+      }
+
+      return permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+    } catch (e) {
+      debugPrint('Loi xin quyen vi tri: $e');
+      return false;
     }
-    
-    return permission == LocationPermission.whileInUse ||
-        permission == LocationPermission.always;
   }
 
   /// Kiểm tra dịch vụ vị trí có được bật không
@@ -60,17 +86,7 @@ class LocationService {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      _currentLocation = LocationModel(
-        latitude: position.latitude,
-        longitude: position.longitude,
-        timestamp: DateTime.now(),
-        accuracy: position.accuracy,
-        altitude: position.altitude,
-        speed: position.speed,
-      );
-
-      _locationHistory.add(_currentLocation!);
-      _locationStreamController.add(_currentLocation!);
+      _handlePosition(position);
 
       return _currentLocation;
     } catch (e) {
@@ -80,35 +96,47 @@ class LocationService {
   }
 
   /// Bắt đầu theo dõi vị trí
-  void startLocationTracking() {
+  Future<bool> startLocationTracking() async {
     try {
+      final hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        debugPrint('Khong the bat dau tracking vi chua co quyen vi tri');
+        return false;
+      }
+
+      final isServiceEnabled = await isLocationServiceEnabled();
+      if (!isServiceEnabled) {
+        debugPrint('Khong the bat dau tracking vi dich vu vi tri dang tat');
+        return false;
+      }
+
+      await _positionStreamSubscription?.cancel();
+
       const locationSettings = LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 10, // Cập nhật mỗi 10m
-        timeLimit: Duration(seconds: 30), // Timeout 30s
       );
 
       _positionStreamSubscription = Geolocator.getPositionStream(
         locationSettings: locationSettings,
-      ).listen((Position position) {
-        _currentLocation = LocationModel(
-          latitude: position.latitude,
-          longitude: position.longitude,
-          timestamp: DateTime.now(),
-          accuracy: position.accuracy,
-          altitude: position.altitude,
-          speed: position.speed,
-        );
-
-        _locationHistory.add(_currentLocation!);
-        _locationStreamController.add(_currentLocation!);
-
-        debugPrint('Vị trí: ${_currentLocation!.latitude}, ${_currentLocation!.longitude}');
-      });
+      ).listen(
+        (Position position) {
+          _handlePosition(position);
+          debugPrint(
+            'Vị trí: ${_currentLocation!.latitude}, ${_currentLocation!.longitude}',
+          );
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Loi stream vi tri: $error');
+        },
+        cancelOnError: false,
+      );
 
       debugPrint('Bắt đầu theo dõi vị trí');
+      return true;
     } catch (e) {
       debugPrint('Lỗi theo dõi vị trí: $e');
+      return false;
     }
   }
 
