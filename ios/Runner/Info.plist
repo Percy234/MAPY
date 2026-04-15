@@ -66,6 +66,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>MAPY cần truy cập vị trí để hiển thị bản đồ và theo dõi hành trình.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>MAPY cần truy cập vị trí để ghi nhận hành trình di chuyển chính xác.</string>
 	<key>NSBonjourServices</key>
 	<array>
   <string>_http._tcp</string>
