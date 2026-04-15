@@ -2,7 +2,7 @@ name: mapy
 description: "MAPY - Ứng dụng quản lý chi phí cá nhân với theo dõi vị trí, tối ưu đường đi và phân tích chi tiêu."
 publish_to: 'none'
 
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.11.4
