@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' show Point;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -29,8 +30,10 @@ class MapScreen extends ConsumerStatefulWidget {
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends ConsumerState<MapScreen> {
+class _MapScreenState extends ConsumerState<MapScreen>
+    with WidgetsBindingObserver {
   static const Color _petrolBlue = Color(0xFF005BAC);
+  static const String _currentLocationIconId = 'current-location-material-icon';
 
   MapLibreMapController? _mapController;
   Timer? _centerButtonTimer;
@@ -39,17 +42,26 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   bool _isSatelliteView = false;
   bool _isCenterLocationActive = false;
   bool _isAddPlaceActive = false;
+  bool _isInfoPanelExpanded = false;
   bool _isStyleLoaded = false;
   bool _isSyncingMapData = false;
+  bool _isCurrentLocationIconLoaded = false;
+  bool _hasRenderedStaticMapData = false;
+  int _mapRebuildSeed = 0;
   bool _isDetectingStayPoints = false;
   bool _isResolvingAddress = false;
+  String? _trackingStartPlaceLabel;
   DateTime? _lastStayPointDetectionAt;
   DateTime? _trackingSegmentStartAt;
   DateTime? _lastAddressResolvedAt;
   LocationModel? _latestTrackedLocation;
   String? _currentAddress;
+  Symbol? _currentLocationSymbol;
+  Line? _liveTraceLine;
   double? _lastAddressLatitude;
   double? _lastAddressLongitude;
+  int _lastPlacesSignature = 0;
+  int _lastRoutesSignature = 0;
   final List<LatLng> _liveTracePoints = <LatLng>[];
   final Map<dynamic, PlaceModel> _placeByCircleId = <dynamic, PlaceModel>{};
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
@@ -61,7 +73,47 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   static const Duration _addressRefreshInterval = Duration(seconds: 45);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _isTrackingEnabled = ref.read(locationServiceProvider).isTrackingActive;
+    unawaited(_bootstrapTrackingOnLaunch());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshMapAfterResume();
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_persistTrackingSegmentForBackground());
+    }
+  }
+
+  void _refreshMapAfterResume() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isStyleLoaded = false;
+      _isCurrentLocationIconLoaded = false;
+      _hasRenderedStaticMapData = false;
+      _currentLocationSymbol = null;
+      _liveTraceLine = null;
+      _lastPlacesSignature = 0;
+      _lastRoutesSignature = 0;
+      _mapRebuildSeed++;
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _centerButtonTimer?.cancel();
     _addPlaceButtonTimer?.cancel();
     _mapController?.dispose();
@@ -74,7 +126,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final places = ref.watch(placesProvider);
     final locationStream = ref.watch(locationStreamProvider);
     final routes = ref.watch(allRoutesProvider);
-    final displayLocation = _latestTrackedLocation ?? currentLocation;
+    final routeList = routes.valueOrNull ?? const <RouteModel>[];
+    final displayLocation = currentLocation ?? _latestTrackedLocation;
 
     locationStream.whenData(_buildLocationUpdater);
 
@@ -83,7 +136,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _syncMapData(
           currentLocation: displayLocation,
           places: places,
-          routes: routes.valueOrNull ?? const <RouteModel>[],
+          routes: routeList,
         );
       });
 
@@ -254,13 +307,39 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   ),
                 ),
 
-                // Bottom info panel
-                Positioned(
-                  bottom: 16,
-                  left: 16,
-                  right: 16,
-                  child: _buildInfoPanel(
-                    _latestTrackedLocation ?? currentLocation,
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SafeArea(
+                    minimum: const EdgeInsets.only(bottom: 10),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        final slideAnimation = Tween<Offset>(
+                          begin: const Offset(0, 1),
+                          end: Offset.zero,
+                        ).animate(animation);
+
+                        return SlideTransition(
+                          position: slideAnimation,
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: _isInfoPanelExpanded
+                          ? _buildExpandedInfoOverlay(
+                              _latestTrackedLocation ?? currentLocation,
+                              places: places,
+                              routes: routeList,
+                              key: const ValueKey<String>('info-expanded'),
+                            )
+                          : _buildCollapsedInfoOverlay(
+                              key: const ValueKey<String>('info-collapsed'),
+                            ),
+                    ),
                   ),
                 ),
               ],
@@ -272,15 +351,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final styleString = _resolveMapStyleString();
 
     return MapLibreMap(
-      key: ValueKey<String>('goong-${_isSatelliteView ? 'sat' : 'street'}'),
+      key: ValueKey<String>(
+        'goong-${_isSatelliteView ? 'sat' : 'street'}-$_mapRebuildSeed',
+      ),
       styleString: styleString,
       initialCameraPosition: CameraPosition(
         target: LatLng(currentLocation.latitude, currentLocation.longitude),
         zoom: 15,
       ),
       minMaxZoomPreference: const MinMaxZoomPreference(3, 20),
-      myLocationEnabled: !kIsWeb,
-      myLocationTrackingMode: MyLocationTrackingMode.none,
+      myLocationEnabled: false,
       compassEnabled: false,
       attributionButtonPosition: AttributionButtonPosition.topLeft,
       attributionButtonMargins: const Point(10000, 10000),
@@ -296,6 +376,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   void _onStyleLoaded() {
     _isStyleLoaded = true;
+    _isCurrentLocationIconLoaded = false;
+    _hasRenderedStaticMapData = false;
+    _currentLocationSymbol = null;
+    _liveTraceLine = null;
+    _lastPlacesSignature = 0;
+    _lastRoutesSignature = 0;
 
     final currentLocation =
         _latestTrackedLocation ?? ref.read(currentLocationProvider);
@@ -332,11 +418,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       return;
     }
 
+    final placesSignature = _computePlacesSignature(places);
+    final routesSignature = _computeRoutesSignature(routes);
+    final shouldRenderStaticMapData =
+        !_hasRenderedStaticMapData ||
+        _lastPlacesSignature != placesSignature ||
+        _lastRoutesSignature != routesSignature;
+
+    if (!shouldRenderStaticMapData) {
+      await _ensureCurrentLocationIcon(controller);
+      await _renderCurrentLocationMarker(controller, currentLocation);
+      await _renderLiveTraceLine(controller);
+      return;
+    }
+
     _isSyncingMapData = true;
 
     try {
       await controller.clearLines();
       await controller.clearCircles();
+      await controller.clearSymbols();
+      _currentLocationSymbol = null;
+      _liveTraceLine = null;
       _placeByCircleId.clear();
 
       for (final route in routes) {
@@ -355,27 +458,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         );
       }
 
-      if (_liveTracePoints.length >= 2) {
-        await controller.addLine(
-          LineOptions(
-            geometry: _liveTracePoints,
-            lineColor: '#00E5FF',
-            lineWidth: 6,
-            lineOpacity: 0.95,
-          ),
-        );
-      }
+      await _renderLiveTraceLine(controller);
 
-      await controller.addCircle(
-        CircleOptions(
-          geometry: LatLng(currentLocation.latitude, currentLocation.longitude),
-          circleRadius: 9,
-          circleColor: '#1E88E5',
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 2,
-          circleOpacity: 0.95,
-        ),
-      );
+      await _ensureCurrentLocationIcon(controller);
+      await _renderCurrentLocationMarker(controller, currentLocation);
 
       for (final place in places) {
         final circle = await controller.addCircle(
@@ -390,9 +476,157 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         );
         _placeByCircleId[circle.id] = place;
       }
+
+      _hasRenderedStaticMapData = true;
+      _lastPlacesSignature = placesSignature;
+      _lastRoutesSignature = routesSignature;
     } finally {
       _isSyncingMapData = false;
     }
+  }
+
+  Future<void> _renderCurrentLocationMarker(
+    MapLibreMapController controller,
+    LocationModel currentLocation,
+  ) async {
+    final symbolOptions = SymbolOptions(
+      geometry: LatLng(currentLocation.latitude, currentLocation.longitude),
+      iconImage: _currentLocationIconId,
+      iconSize: 0.7,
+      iconAnchor: 'bottom',
+      zIndex: 1000,
+    );
+
+    final currentSymbol = _currentLocationSymbol;
+    if (currentSymbol == null) {
+      _currentLocationSymbol = await controller.addSymbol(symbolOptions);
+      return;
+    }
+
+    try {
+      await controller.updateSymbol(currentSymbol, symbolOptions);
+    } catch (_) {
+      _currentLocationSymbol = await controller.addSymbol(symbolOptions);
+    }
+  }
+
+  Future<void> _renderLiveTraceLine(MapLibreMapController controller) async {
+    if (_liveTracePoints.length < 2) {
+      final existingLine = _liveTraceLine;
+      if (existingLine != null) {
+        try {
+          await controller.removeLine(existingLine);
+        } catch (_) {
+          // Bỏ qua lỗi remove line để không ảnh hưởng render marker.
+        }
+      }
+
+      _liveTraceLine = null;
+      return;
+    }
+
+    final lineOptions = LineOptions(
+      geometry: _liveTracePoints,
+      lineColor: '#00E5FF',
+      lineWidth: 6,
+      lineOpacity: 0.95,
+    );
+
+    final existingLine = _liveTraceLine;
+    if (existingLine == null) {
+      _liveTraceLine = await controller.addLine(lineOptions);
+      return;
+    }
+
+    try {
+      await controller.updateLine(existingLine, lineOptions);
+    } catch (_) {
+      _liveTraceLine = await controller.addLine(lineOptions);
+    }
+  }
+
+  int _computePlacesSignature(List<PlaceModel> places) {
+    return Object.hashAll(
+      places.map(
+        (place) => Object.hash(
+          place.id,
+          place.latitude,
+          place.longitude,
+          place.placeType.index,
+          place.visitCount,
+          place.lastVisited?.millisecondsSinceEpoch ?? 0,
+        ),
+      ),
+    );
+  }
+
+  int _computeRoutesSignature(List<RouteModel> routes) {
+    return Object.hashAll(
+      routes.map(
+        (route) => Object.hash(
+          route.id,
+          route.startLatitude,
+          route.startLongitude,
+          route.endLatitude,
+          route.endLongitude,
+          route.distanceKm,
+          route.lastTraveledCount,
+          route.lastTraveledDate.millisecondsSinceEpoch,
+          route.traceCoordinates?.length ?? 0,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _ensureCurrentLocationIcon(
+    MapLibreMapController controller,
+  ) async {
+    if (_isCurrentLocationIconLoaded) {
+      return;
+    }
+
+    final iconBytes = await _buildCurrentLocationMaterialIconBytes();
+    await controller.addImage(_currentLocationIconId, iconBytes);
+    _isCurrentLocationIconLoaded = true;
+  }
+
+  Future<Uint8List> _buildCurrentLocationMaterialIconBytes() async {
+    const canvasSize = 128.0;
+    const iconFontSize = 110.0;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(Icons.location_on.codePoint),
+      style: TextStyle(
+        fontSize: iconFontSize,
+        color: const Color(0xFF1E88E5),
+        fontFamily: Icons.location_on.fontFamily,
+        package: Icons.location_on.fontPackage,
+      ),
+    );
+    textPainter.layout();
+
+    textPainter.paint(
+      canvas,
+      Offset(
+        (canvasSize - textPainter.width) / 2,
+        (canvasSize - textPainter.height) / 2,
+      ),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+
+    if (byteData == null) {
+      throw StateError('Không thể tạo icon vị trí từ Material Icons.');
+    }
+
+    return byteData.buffer.asUint8List();
   }
 
   void _onCircleTapped(Circle circle) {
@@ -403,12 +637,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   void _buildLocationUpdater(LocationModel location) {
+    _latestTrackedLocation = location;
+
     if (!_isTrackingEnabled) {
       return;
     }
 
-    _latestTrackedLocation = location;
     _appendLiveTracePoint(location);
+
+    _trackingStartPlaceLabel ??= _resolvePlaceLabelFromLocation(
+      location,
+      ref.read(placesProvider),
+    );
 
     unawaited(_detectStoppedPlacesIfNeeded());
 
@@ -418,13 +658,88 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     }
 
     unawaited(
+      _syncMapData(
+        currentLocation: location,
+        places: ref.read(placesProvider),
+        routes: ref.read(allRoutesProvider).valueOrNull ?? const <RouteModel>[],
+      ),
+    );
+
+    unawaited(
       controller.animateCamera(
         CameraUpdate.newLatLng(LatLng(location.latitude, location.longitude)),
       ),
     );
   }
 
-  Widget _buildInfoPanel(LocationModel location) {
+  Future<void> _persistTrackingSegmentForBackground() async {
+    if (!_isTrackingEnabled || _liveTracePoints.length < 2) {
+      return;
+    }
+
+    await _saveCurrentRouteSegment(
+      endTime: DateTime.now(),
+      resetTraceAfterSave: true,
+    );
+  }
+
+  void _toggleInfoPanel() {
+    setState(() {
+      _isInfoPanelExpanded = !_isInfoPanelExpanded;
+    });
+  }
+
+  Widget _buildCollapsedInfoOverlay({required Key key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(bottom: 4),
+      child: _buildInfoToggleButton(),
+    );
+  }
+
+  Widget _buildExpandedInfoOverlay(
+    LocationModel location, {
+    required List<PlaceModel> places,
+    required List<RouteModel> routes,
+    required Key key,
+  }) {
+    return Column(
+      key: key,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildInfoToggleButton(),
+        const SizedBox(height: 8),
+        _buildInfoPanel(
+          location,
+          places: places,
+          routes: routes,
+          key: const ValueKey<String>('info-panel'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoToggleButton() {
+    return ElevatedButton(
+      onPressed: _toggleInfoPanel,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: _petrolBlue,
+        elevation: 1,
+        side: const BorderSide(color: _petrolBlue, width: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      ),
+      child: Text(_isInfoPanelExpanded ? 'Ẩn thông tin' : 'Xem thông tin'),
+    );
+  }
+
+  Widget _buildInfoPanel(
+    LocationModel location, {
+    required List<PlaceModel> places,
+    required List<RouteModel> routes,
+    required Key key,
+  }) {
     final addressText = _currentAddress?.trim();
     final displayAddress = (addressText == null || addressText.isEmpty)
         ? (ApiConfig.isGoongRestConfigured
@@ -432,48 +747,234 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               : 'Chưa cấu hình Goong REST API để lấy địa chỉ.')
         : addressText;
 
-    return Card(
+    final placeNameById = <String, String>{
+      for (final place in places) place.id: place.name,
+    };
+    final currentPlaceLabel = _resolvePlaceLabelFromLocation(location, places);
+    final startPlaceLabel = _trackingStartPlaceLabel ?? currentPlaceLabel;
+    final hasActivePair =
+        _isTrackingEnabled && startPlaceLabel != currentPlaceLabel;
+    final activePairLabel = '$startPlaceLabel -> $currentPlaceLabel';
+
+    final placePairRoutes = routes
+        .where(
+          (route) => route.startPlaceId != null && route.endPlaceId != null,
+        )
+        .toList(growable: false);
+    final latestPairRoute = placePairRoutes.isNotEmpty
+        ? placePairRoutes.last
+        : null;
+    final latestPairLabel = latestPairRoute == null
+        ? null
+        : '${placeNameById[latestPairRoute.startPlaceId!] ?? 'Địa điểm A'} -> ${placeNameById[latestPairRoute.endPlaceId!] ?? 'Địa điểm B'}';
+
+    final trackingHint = _isTrackingEnabled
+        ? 'Đang theo dõi: điểm A đã được giữ, khi tới địa điểm khác sẽ tạo cặp A -> B.'
+        : 'Bật theo dõi để bắt đầu một cặp địa điểm mới từ vị trí hiện tại.';
+
+    return Container(
+      key: key,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.14),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Vị trí hiện tại',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                GestureDetector(
-                  onTap: () {
-                    final addressToCopy = _currentAddress?.trim();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          (addressToCopy == null || addressToCopy.isEmpty)
-                              ? 'Địa chỉ chưa sẵn sàng'
-                              : addressToCopy,
+            SizedBox(
+              width: double.infinity,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Vị trí hiện tại',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              final addressToCopy = _currentAddress?.trim();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    (addressToCopy == null ||
+                                            addressToCopy.isEmpty)
+                                        ? 'Địa chỉ chưa sẵn sàng'
+                                        : addressToCopy,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Icon(Icons.copy, size: 16),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        displayAddress,
+                        style: const TextStyle(fontSize: 12),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Lat: ${location.latitude.toStringAsFixed(6)} | Lng: ${location.longitude.toStringAsFixed(6)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
                         ),
                       ),
-                    );
-                  },
-                  child: const Icon(Icons.copy, size: 16),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: 8),
-            Text(
-              displayAddress,
-              style: const TextStyle(fontSize: 12),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+            SizedBox(
+              width: double.infinity,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Nối điểm di chuyển',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Điểm A (bắt đầu): $startPlaceLabel',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        hasActivePair
+                            ? 'Cặp địa điểm hiện tại: $activePairLabel'
+                            : 'Đang chờ điểm B: hãy di chuyển sang một địa điểm khác để tạo cặp A -> B.',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Cặp địa điểm đã ghi nhận: ${placePairRoutes.length}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (latestPairLabel != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cặp gần nhất: $latestPairLabel',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text(
+                        trackingHint,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _bootstrapTrackingOnLaunch() async {
+    final locationService = ref.read(locationServiceProvider);
+    var seedLocation =
+        _latestTrackedLocation ?? ref.read(currentLocationProvider);
+
+    if (!locationService.isTrackingActive) {
+      final trackingStarted = await locationService.startLocationTracking();
+      if (!mounted) {
+        return;
+      }
+
+      if (!trackingStarted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Không bật được định vị. Hãy bật GPS chính xác và cấp quyền vị trí cho ứng dụng.',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        });
+        return;
+      }
+
+      seedLocation ??= await locationService.getCurrentLocation();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isTrackingEnabled = true;
+      });
+    }
+
+    seedLocation ??= await locationService.getCurrentLocation();
+    if (!mounted || seedLocation == null) {
+      return;
+    }
+
+    final places = ref.read(placesProvider);
+    setState(() {
+      _trackingStartPlaceLabel = _resolvePlaceLabelFromLocation(
+        seedLocation!,
+        places,
+      );
+    });
+  }
+
+  String _resolvePlaceLabelFromLocation(
+    LocationModel location,
+    List<PlaceModel> places,
+  ) {
+    final nearestPlaceId = _findNearestPlaceId(
+      LatLng(location.latitude, location.longitude),
+      places,
+    );
+
+    if (nearestPlaceId != null) {
+      for (final place in places) {
+        if (place.id == nearestPlaceId) {
+          return place.name;
+        }
+      }
+    }
+
+    return 'Địa điểm hiện tại';
   }
 
   Future<void> _updateCurrentAddressIfNeeded(LocationModel location) async {
@@ -687,14 +1188,28 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   Future<void> _toggleTracking() async {
     final shouldEnable = !_isTrackingEnabled;
-
-    setState(() {
-      _isTrackingEnabled = shouldEnable;
-    });
-
     final locationService = ref.read(locationServiceProvider);
 
     if (shouldEnable) {
+      final trackingStarted = await locationService.startLocationTracking();
+      if (!mounted) {
+        return;
+      }
+
+      if (!trackingStarted) {
+        setState(() {
+          _isTrackingEnabled = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể bật theo dõi. Hãy cấp quyền vị trí nền.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
       _lastStayPointDetectionAt = null;
       _isDetectingStayPoints = false;
       _trackingSegmentStartAt = DateTime.now();
@@ -702,13 +1217,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
       final seedLocation =
           _latestTrackedLocation ?? ref.read(currentLocationProvider);
+      final startPlaceLabel = seedLocation != null
+          ? _resolvePlaceLabelFromLocation(
+              seedLocation,
+              ref.read(placesProvider),
+            )
+          : 'Địa điểm hiện tại';
+
       if (seedLocation != null) {
         _liveTracePoints.add(
           LatLng(seedLocation.latitude, seedLocation.longitude),
         );
       }
 
-      locationService.startLocationTracking();
+      setState(() {
+        _isTrackingEnabled = true;
+        _trackingStartPlaceLabel = startPlaceLabel;
+      });
 
       if (seedLocation != null) {
         unawaited(
@@ -729,6 +1254,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       );
       return;
     }
+
+    setState(() {
+      _isTrackingEnabled = false;
+      _trackingStartPlaceLabel = null;
+    });
 
     locationService.stopLocationTracking();
 

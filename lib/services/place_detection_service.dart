@@ -16,13 +16,19 @@ class PlaceDetectionService {
     final detectedPlaces = <String, PlaceModel>{};
 
     for (final cluster in stayPoints) {
+      if (cluster.duration.inMilliseconds < LocationConfig.minStayDuration) {
+        continue;
+      }
+
+      final detectedAt = DateTime.now();
+
       // Kiểm tra xem cluster này có matched với existing place không
       final matchedPlace = _findMatchingPlace(cluster, existingPlaces);
 
       if (matchedPlace != null) {
         // Nếu có match, cập nhật visit count
         detectedPlaces[matchedPlace.id] = matchedPlace.copyWith(
-          lastVisited: DateTime.now(),
+          lastVisited: detectedAt,
           visitCount: matchedPlace.visitCount + 1,
         );
       } else {
@@ -40,6 +46,7 @@ class PlaceDetectionService {
           longitude: cluster.longitude,
           address: resolvedStop.address,
           placeType: suggestedType,
+          lastVisited: detectedAt,
           radius: 100, // Mặc định 100m
         );
 

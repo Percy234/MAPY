@@ -27,8 +27,9 @@ class ApiConfig {
 class LocationConfig {
   static const int minStayDuration = 300000; // 5 phút (ms)
   static const double distanceThreshold = 50; // 50 mét
-  static const int updateInterval = 10000; // 10 giây
-  static const double liveTraceMinDistanceMeters = 8; // Vẽ line mỗi >= 8m
+  static const int locationUpdateInterval = 1000; // 1 giây
+  static const int locationDistanceFilterMeters = 1; // cập nhật mỗi >= 1m
+  static const double liveTraceMinDistanceMeters = 1; // Vẽ line mỗi >= 1m
   static const double minRouteSaveDistanceMeters = 30; // Chỉ lưu route >= 30m
   static const int stayPointDetectionIntervalSeconds = 45; // Quét điểm dừng định kỳ
 }

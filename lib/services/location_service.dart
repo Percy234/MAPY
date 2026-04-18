@@ -6,6 +6,8 @@ import '../utils/constants.dart';
 
 class LocationService {
   static final LocationService _instance = LocationService._internal();
+  static const Duration _streamRecoveryCheckInterval = Duration(seconds: 8);
+  static const Duration _streamStallThreshold = Duration(seconds: 12);
 
   factory LocationService() {
     return _instance;
@@ -14,17 +16,60 @@ class LocationService {
   LocationService._internal();
 
   StreamSubscription<Position>? _positionStreamSubscription;
+  Timer? _streamRecoveryTimer;
   final List<LocationModel> _locationHistory = [];
   LocationModel? _currentLocation;
+  DateTime? _lastPositionUpdatedAt;
+  bool _isTrackingActive = false;
+  bool _isRecoveringCurrentPosition = false;
 
   // Streams để theo dõi thay đổi
   final _locationStreamController = StreamController<LocationModel>.broadcast();
   Stream<LocationModel> get locationStream => _locationStreamController.stream;
 
-  List<LocationModel> get locationHistory => List.unmodifiable(_locationHistory);
+  List<LocationModel> get locationHistory =>
+      List.unmodifiable(_locationHistory);
   LocationModel? get currentLocation => _currentLocation;
+  bool get isTrackingActive => _isTrackingActive;
+
+  LocationSettings _buildLocationSettings() {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          forceLocationManager: true,
+          distanceFilter: LocationConfig.locationDistanceFilterMeters,
+          intervalDuration: const Duration(
+            milliseconds: LocationConfig.locationUpdateInterval,
+          ),
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationTitle: 'MAPY đang theo dõi vị trí',
+            notificationText:
+                'Ứng dụng đang chạy nền để ghi nhận hành trình của bạn.',
+            enableWakeLock: true,
+            setOngoing: true,
+          ),
+        );
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return AppleSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: LocationConfig.locationDistanceFilterMeters,
+          pauseLocationUpdatesAutomatically: false,
+          showBackgroundLocationIndicator: false,
+        );
+      case TargetPlatform.fuchsia:
+      case TargetPlatform.linux:
+      case TargetPlatform.windows:
+        return LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: LocationConfig.locationDistanceFilterMeters,
+        );
+    }
+  }
 
   void _handlePosition(Position position) {
+    _lastPositionUpdatedAt = DateTime.now();
     _currentLocation = LocationModel(
       latitude: position.latitude,
       longitude: position.longitude,
@@ -32,6 +77,7 @@ class LocationService {
       accuracy: position.accuracy,
       altitude: position.altitude,
       speed: position.speed,
+      heading: position.heading,
     );
 
     _locationHistory.add(_currentLocation!);
@@ -84,6 +130,8 @@ class LocationService {
 
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
+        forceAndroidLocationManager:
+            defaultTargetPlatform == TargetPlatform.android,
       );
 
       _handlePosition(position);
@@ -98,6 +146,10 @@ class LocationService {
   /// Bắt đầu theo dõi vị trí
   Future<bool> startLocationTracking() async {
     try {
+      if (_isTrackingActive && _positionStreamSubscription != null) {
+        return true;
+      }
+
       final hasPermission = await requestLocationPermission();
       if (!hasPermission) {
         debugPrint('Khong the bat dau tracking vi chua co quyen vi tri');
@@ -112,29 +164,31 @@ class LocationService {
 
       await _positionStreamSubscription?.cancel();
 
-      const locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // Cập nhật mỗi 10m
-      );
+      final locationSettings = _buildLocationSettings();
 
-      _positionStreamSubscription = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen(
-        (Position position) {
-          _handlePosition(position);
-          debugPrint(
-            'Vị trí: ${_currentLocation!.latitude}, ${_currentLocation!.longitude}',
+      _positionStreamSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: locationSettings,
+          ).listen(
+            (Position position) {
+              _handlePosition(position);
+              debugPrint(
+                'Vị trí: ${_currentLocation!.latitude}, ${_currentLocation!.longitude}',
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _isTrackingActive = false;
+              debugPrint('Loi stream vi tri: $error');
+            },
+            cancelOnError: false,
           );
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          debugPrint('Loi stream vi tri: $error');
-        },
-        cancelOnError: false,
-      );
 
+      _isTrackingActive = true;
+      _startStreamRecoveryTimer();
       debugPrint('Bắt đầu theo dõi vị trí');
       return true;
     } catch (e) {
+      _isTrackingActive = false;
       debugPrint('Lỗi theo dõi vị trí: $e');
       return false;
     }
@@ -142,9 +196,56 @@ class LocationService {
 
   /// Dừng theo dõi vị trí
   void stopLocationTracking() {
+    _streamRecoveryTimer?.cancel();
+    _streamRecoveryTimer = null;
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
+    _isTrackingActive = false;
     debugPrint('Dừng theo dõi vị trí');
+  }
+
+  void _startStreamRecoveryTimer() {
+    _streamRecoveryTimer?.cancel();
+
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
+
+    _streamRecoveryTimer = Timer.periodic(_streamRecoveryCheckInterval, (
+      Timer _,
+    ) {
+      unawaited(_recoverStalledStreamIfNeeded());
+    });
+  }
+
+  Future<void> _recoverStalledStreamIfNeeded() async {
+    if (!_isTrackingActive || _isRecoveringCurrentPosition) {
+      return;
+    }
+
+    final lastUpdatedAt = _lastPositionUpdatedAt;
+    if (lastUpdatedAt != null &&
+        DateTime.now().difference(lastUpdatedAt) < _streamStallThreshold) {
+      return;
+    }
+
+    _isRecoveringCurrentPosition = true;
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        forceAndroidLocationManager:
+            defaultTargetPlatform == TargetPlatform.android,
+      );
+      _handlePosition(position);
+      debugPrint(
+        'Phục hồi GPS fallback: ${position.latitude}, ${position.longitude}',
+      );
+    } catch (e) {
+      debugPrint('Khong the phuc hoi GPS fallback: $e');
+    } finally {
+      _isRecoveringCurrentPosition = false;
+    }
   }
 
   /// Lấy vị trí gần nhất trong khoảng thời gian
@@ -153,7 +254,11 @@ class LocationService {
     DateTime endTime,
   ) {
     return _locationHistory
-        .where((loc) => loc.timestamp.isAfter(startTime) && loc.timestamp.isBefore(endTime))
+        .where(
+          (loc) =>
+              loc.timestamp.isAfter(startTime) &&
+              loc.timestamp.isBefore(endTime),
+        )
         .toList();
   }
 
@@ -198,17 +303,23 @@ class LocationService {
 
       // Kiểm tra xem có dừng lâu không
       if (clusterLocations.length > 1) {
-        final duration = clusterLocations.last.timestamp.difference(clusterLocations.first.timestamp);
+        final duration = clusterLocations.last.timestamp.difference(
+          clusterLocations.first.timestamp,
+        );
         if (duration.inMilliseconds >= minStayMs) {
           // Tính trung tâm cluster
-          final centerLat = clusterLocations.fold<double>(
-            0,
-            (sum, loc) => sum + loc.latitude,
-          ) / clusterLocations.length;
-          final centerLon = clusterLocations.fold<double>(
-            0,
-            (sum, loc) => sum + loc.longitude,
-          ) / clusterLocations.length;
+          final centerLat =
+              clusterLocations.fold<double>(
+                0,
+                (sum, loc) => sum + loc.latitude,
+              ) /
+              clusterLocations.length;
+          final centerLon =
+              clusterLocations.fold<double>(
+                0,
+                (sum, loc) => sum + loc.longitude,
+              ) /
+              clusterLocations.length;
 
           clusters.add(
             LocationCluster(
