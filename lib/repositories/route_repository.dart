@@ -28,7 +28,7 @@ class RouteRepository {
     try {
       return _box.values
           .where((route) =>
-              route.startTime.isAfter(startDate) &&
+            !route.startTime.isBefore(startDate) &&
               route.startTime.isBefore(endDate))
           .toList();
     } catch (e) {

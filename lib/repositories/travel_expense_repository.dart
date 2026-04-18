@@ -22,7 +22,8 @@ class TravelExpenseRepository {
     try {
       return _box.values
           .where((expense) =>
-              expense.date.isAfter(startDate) && expense.date.isBefore(endDate))
+            !expense.date.isBefore(startDate) &&
+            expense.date.isBefore(endDate))
           .toList();
     } catch (e) {
       debugPrint('Lỗi khi tính phí đi lại: $e');

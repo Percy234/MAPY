@@ -14,16 +14,18 @@ final locationServiceProvider = Provider<LocationService>((ref) {
 });
 
 // 2. Provider cho vị trí hiện tại
-final currentLocationProvider = StateNotifierProvider<CurrentLocationNotifier, LocationModel?>((ref) {
-  final service = ref.watch(locationServiceProvider);
-  return CurrentLocationNotifier(service);
-});
+final currentLocationProvider =
+    StateNotifierProvider<CurrentLocationNotifier, LocationModel?>((ref) {
+      final service = ref.watch(locationServiceProvider);
+      return CurrentLocationNotifier(service);
+    });
 
 // 3. Provider cho lịch sử vị trí
-final locationHistoryProvider = StateNotifierProvider<LocationHistoryNotifier, List<LocationModel>>((ref) {
-  final service = ref.watch(locationServiceProvider);
-  return LocationHistoryNotifier(service);
-});
+final locationHistoryProvider =
+    StateNotifierProvider<LocationHistoryNotifier, List<LocationModel>>((ref) {
+      final service = ref.watch(locationServiceProvider);
+      return LocationHistoryNotifier(service);
+    });
 
 // 4. Provider cho stream vị trí real-time
 final locationStreamProvider = StreamProvider<LocationModel>((ref) {
@@ -39,7 +41,12 @@ final stayPointsProvider = FutureProvider<List<LocationCluster>>((ref) async {
 
 // Provider cho quãng đường hôm nay
 final dailyDistanceProvider = FutureProvider<double>((ref) async {
+  // Recompute quang duong moi khi stream vi tri co du lieu moi.
   final service = ref.watch(locationServiceProvider);
+  if (!service.isTrackingActive) {
+    await service.startLocationTracking();
+  }
+  ref.watch(locationStreamProvider);
   return service.getDailyDistance();
 });
 
@@ -48,12 +55,13 @@ final placeRepositoryProvider = Provider<PlaceRepository>((ref) {
 });
 
 // 6. Provider cho danh sách địa điểm
-final placesProvider = StateNotifierProvider<PlacesNotifier, List<PlaceModel>>((ref) {
+final placesProvider = StateNotifierProvider<PlacesNotifier, List<PlaceModel>>((
+  ref,
+) {
   final locationService = ref.watch(locationServiceProvider);
   final placeRepository = ref.watch(placeRepositoryProvider);
   return PlacesNotifier(locationService, placeRepository);
 });
-
 
 // --- IMPLEMENTATIONS ---
 
@@ -65,7 +73,14 @@ class CurrentLocationNotifier extends StateNotifier<LocationModel?> {
     _locationSubscription = _service.locationStream.listen((location) {
       state = location;
     });
-    unawaited(updateCurrentLocation());
+    unawaited(_bootstrapLocationTracking());
+  }
+
+  Future<void> _bootstrapLocationTracking() async {
+    if (!_service.isTrackingActive) {
+      await _service.startLocationTracking();
+    }
+    await updateCurrentLocation();
   }
 
   Future<void> updateCurrentLocation() async {
@@ -102,7 +117,7 @@ class LocationHistoryNotifier extends StateNotifier<List<LocationModel>> {
     _service.clearLocationHistory();
     state = [];
   }
-  
+
   // Bạn có thể thêm hàm refresh nếu service cập nhật dữ liệu ngầm
   void refreshHistory() {
     state = [..._service.locationHistory];
@@ -132,7 +147,7 @@ class PlacesNotifier extends StateNotifier<List<PlaceModel>> {
     await _placeRepository.save(place);
     state = [
       for (final p in state)
-        if (p.id == place.id) place else p
+        if (p.id == place.id) place else p,
     ];
   }
 
@@ -145,12 +160,9 @@ class PlacesNotifier extends StateNotifier<List<PlaceModel>> {
     final nextState = [
       for (final p in state)
         if (p.id == placeId)
-          p.copyWith(
-            visitCount: p.visitCount + 1,
-            lastVisited: DateTime.now(),
-          )
+          p.copyWith(visitCount: p.visitCount + 1, lastVisited: DateTime.now())
         else
-          p
+          p,
     ];
     await _placeRepository.saveAll(nextState);
     state = nextState;
@@ -163,7 +175,10 @@ class PlacesNotifier extends StateNotifier<List<PlaceModel>> {
     }
 
     final unprocessedStayPoints = stayPoints
-        .where((cluster) => !_processedStayPointKeys.contains(_buildStayPointKey(cluster)))
+        .where(
+          (cluster) =>
+              !_processedStayPointKeys.contains(_buildStayPointKey(cluster)),
+        )
         .toList(growable: false);
 
     if (unprocessedStayPoints.isEmpty) {

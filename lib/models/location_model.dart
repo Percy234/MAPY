@@ -27,6 +27,9 @@ class LocationModel extends HiveObject {
   @HiveField(6)
   final double? speed;
 
+  @HiveField(7)
+  final double? heading;
+
   LocationModel({
     String? id,
     required this.latitude,
@@ -35,23 +38,25 @@ class LocationModel extends HiveObject {
     this.accuracy,
     this.altitude,
     this.speed,
+    this.heading,
   }) : id = id ?? const Uuid().v4();
 
   // Tính khoảng cách từ vị trí này đến vị trí khác (Haversine formula)
   double distanceTo(LocationModel other) {
     const earthRadiusKm = 6371;
-    
+
     final dLat = _toRadians(other.latitude - latitude);
     final dLon = _toRadians(other.longitude - longitude);
-    
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRadians(latitude)) *
             math.cos(_toRadians(other.latitude)) *
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
-    
+
     final c = 2 * math.asin(math.sqrt(a));
-    
+
     return earthRadiusKm * c * 1000; // Trả về mét
   }
 
@@ -67,6 +72,7 @@ class LocationModel extends HiveObject {
     double? accuracy,
     double? altitude,
     double? speed,
+    double? heading,
   }) {
     return LocationModel(
       id: id ?? this.id,
@@ -76,6 +82,7 @@ class LocationModel extends HiveObject {
       accuracy: accuracy ?? this.accuracy,
       altitude: altitude ?? this.altitude,
       speed: speed ?? this.speed,
+      heading: heading ?? this.heading,
     );
   }
 

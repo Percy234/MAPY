@@ -24,13 +24,14 @@ class LocationModelAdapter extends TypeAdapter<LocationModel> {
       accuracy: fields[4] as double?,
       altitude: fields[5] as double?,
       speed: fields[6] as double?,
+      heading: fields[7] as double?,
     );
   }
 
   @override
   void write(BinaryWriter writer, LocationModel obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -44,7 +45,9 @@ class LocationModelAdapter extends TypeAdapter<LocationModel> {
       ..writeByte(5)
       ..write(obj.altitude)
       ..writeByte(6)
-      ..write(obj.speed);
+      ..write(obj.speed)
+      ..writeByte(7)
+      ..write(obj.heading);
   }
 
   @override

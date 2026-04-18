@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../models/vehicle_model.dart';
+import '../providers/location_provider.dart';
 import '../providers/travel_expense_provider.dart';
 import '../services/petrolimex_service.dart';
 
@@ -12,16 +15,27 @@ class TravelExpenseScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final todayExpenses = ref.watch(todayTravelExpensesProvider);
+    final dailyDistance = ref.watch(dailyDistanceProvider);
+    final todayFuelCost = ref.watch(todayFuelCostProvider);
     final petrolimexPrices = ref.watch(petrolimexPricesProvider);
     final activeVehicle = ref.watch(activeVehicleProvider);
     final selectedFuelZone = ref.watch(selectedFuelZoneProvider);
     final priceFormatter = NumberFormat.decimalPattern('vi_VN');
     final dateTimeFormatter = DateFormat('HH:mm - dd/MM/yyyy');
+    final latestSyncedFormatter = DateFormat('HH:mm dd/MM');
 
-    final todayDistance = todayExpenses.maybeWhen(
+    final todayDistanceFromExpenses = todayExpenses.maybeWhen(
       data: (expenses) =>
           expenses.fold<double>(0, (sum, expense) => sum + expense.distance),
       orElse: () => 0,
+    );
+    final todayDistanceFromTracking = dailyDistance.maybeWhen(
+      data: (distance) => distance,
+      orElse: () => 0,
+    );
+    final todayDistance = math.max(
+      todayDistanceFromExpenses,
+      todayDistanceFromTracking,
     );
     final consumption = activeVehicle.maybeWhen(
       data: (vehicle) => vehicle?.fuelConsumption ?? 0,
@@ -35,7 +49,12 @@ class TravelExpenseScreen extends ConsumerWidget {
       ),
       orElse: () => 0,
     );
-    final totalCost = todayDistance * consumption * fuelPriceByZone;
+    final estimatedCost = todayDistance * consumption * fuelPriceByZone;
+    final persistedTodayFuelCost = todayFuelCost.maybeWhen(
+      data: (cost) => cost,
+      orElse: () => 0,
+    );
+    final totalCost = math.max(estimatedCost, persistedTodayFuelCost);
     final estimatedFuel = todayDistance * consumption;
     final fuelTypeText = activeVehicle.maybeWhen(
       data: (vehicle) => vehicle?.fuelType.display ?? '--',
@@ -54,7 +73,7 @@ class TravelExpenseScreen extends ConsumerWidget {
     );
     final latestSyncedText = latestSyncedAt == null
         ? '--'
-        : dateTimeFormatter.format(latestSyncedAt);
+        : latestSyncedFormatter.format(latestSyncedAt);
     final totalCostText = '${priceFormatter.format(totalCost.round())}đ';
     final priceByZoneText =
         '${priceFormatter.format(fuelPriceByZone.round())}đ/L';
@@ -302,9 +321,7 @@ class TravelExpenseScreen extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     totalCostText,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.headlineLarge?.copyWith(
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: _petrolBlue,
                     ),
@@ -355,7 +372,7 @@ class TravelExpenseScreen extends ConsumerWidget {
               _buildTodayInfoBlock(
                 context,
                 icon: Icons.schedule,
-                title: 'Lần đồng bộ gần nhất',
+                title: 'Đồng bộ gần nhất',
                 value: latestSyncedText,
                 caption: 'Theo lần cập nhật bảng giá xăng',
               ),
@@ -385,6 +402,8 @@ class TravelExpenseScreen extends ConsumerWidget {
             const SizedBox(height: 6),
             Text(
               title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
