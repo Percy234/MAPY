@@ -3,6 +3,7 @@ import '../models/expense_model.dart';
 import '../models/vehicle_model.dart';
 import '../repositories/user_profile_repository.dart';
 import '../repositories/vehicle_repository.dart';
+import '../providers/route_provider.dart';
 import '../services/travel_expense_service.dart';
 import '../services/petrolimex_service.dart';
 
@@ -31,14 +32,16 @@ final activeVehicleProvider = FutureProvider<VehicleModel?>((ref) async {
 
 // Chi phí xăng hôm nay
 final todayFuelCostProvider = FutureProvider<double>((ref) async {
-  final service = ref.watch(travelExpenseServiceProvider);
-  return await service.getTodayFuelCost();
+  final expenses = await ref.watch(todayTravelExpensesProvider.future);
+  return expenses.fold<double>(0.0, (sum, e) => sum + e.fuelCost);
 });
 
 // Danh sách chi phí xăng hôm nay
 final todayTravelExpensesProvider = FutureProvider<List<TravelExpenseModel>>((
   ref,
 ) async {
+  // Khi routes thay doi (them/chinh sua), can doc lai chi phi theo ngay.
+  ref.watch(allRoutesProvider);
   final service = ref.watch(travelExpenseServiceProvider);
   return await service.getTodayExpenses();
 });
