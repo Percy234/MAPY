@@ -13,7 +13,8 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  late PageController _pageController;
+  static const Color _petrolBlue = Color(0xFF005BAC);
+
   int _currentStep = 0;
 
   // Step 1 - Profile
@@ -30,7 +31,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
     _fullNameController = TextEditingController();
     _vehicleNameController = TextEditingController();
     _cylinderDisplacementController = TextEditingController();
@@ -39,7 +39,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _fullNameController.dispose();
     _vehicleNameController.dispose();
     _cylinderDisplacementController.dispose();
@@ -49,67 +48,180 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const totalSteps = 3;
+    final progressValue = (_currentStep + 1) / totalSteps;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Thiết lập tài khoản - Bước ${_currentStep + 1}/3'),
-        elevation: 0,
-      ),
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: (index) {
-          setState(() => _currentStep = index);
-        },
-        children: [
-          _buildStep1ProfilePage(),
-          _buildStep2VehiclePage(),
-          _buildStep3ConfirmPage(),
-        ],
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            if (_currentStep > 0)
-              ElevatedButton.icon(
-                onPressed: _previousStep,
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Quay lại'),
-              )
-            else
-              const SizedBox(width: 100),
-            ElevatedButton.icon(
-              onPressed: _currentStep < 2 ? _nextStep : _completeSetup,
-              icon: Icon(_currentStep < 2 ? Icons.arrow_forward : Icons.check),
-              label: Text(_currentStep < 2 ? 'Tiếp tục' : 'Hoàn tất'),
-            ),
-          ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Thiết lập tài khoản',
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.2,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Bắt đầu với MAPY',
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Hoàn tất 3 bước để tính quãng đường và chi phí theo phương tiện của bạn',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Card(
+                  elevation: 2,
+                  shadowColor: Colors.black.withValues(alpha: 0.08),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: progressValue,
+                                minHeight: 6,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  _petrolBlue,
+                                ),
+                                backgroundColor: _petrolBlue.withValues(
+                                  alpha: 0.12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Bước ${_currentStep + 1}/$totalSteps',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.labelSmall?.copyWith(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        child: KeyedSubtree(
+                          key: ValueKey(_currentStep),
+                          child: _buildCurrentStepContent(),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: Column(
+                          children: [
+                            if (_currentStep > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TextButton.icon(
+                                  onPressed: _previousStep,
+                                  icon: const Icon(Icons.arrow_back),
+                                  label: const Text('Quay lại'),
+                                ),
+                              ),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _currentStep < 2
+                                    ? _nextStep
+                                    : _completeSetup,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _petrolBlue,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: Text(
+                                  _currentStep < 2 ? 'Tiếp tục' : 'Hoàn tất',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildCurrentStepContent() {
+    switch (_currentStep) {
+      case 0:
+        return _buildStep1ProfilePage();
+      case 1:
+        return _buildStep2VehiclePage();
+      default:
+        return _buildStep3ConfirmPage();
+    }
+  }
+
   // 📋 STEP 1: Profile
   Widget _buildStep1ProfilePage() {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Thông tin cá nhân',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              const Icon(Icons.person, color: _petrolBlue, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Thông tin cá nhân',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
+          const Text(
+            'Họ và Tên',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _fullNameController,
             decoration: InputDecoration(
-              labelText: 'Họ và Tên',
               hintText: 'Ví dụ: Nguyễn Văn A',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              prefixIcon: const Icon(Icons.person),
             ),
           ),
           const SizedBox(height: 24),
@@ -121,9 +233,26 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           Wrap(
             spacing: 8,
             children: Gender.values.map((gender) {
+              final isSelected = _selectedGender == gender;
+
               return ChoiceChip(
+                showCheckmark: false,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? _petrolBlue
+                      : _petrolBlue.withValues(alpha: 0.35),
+                ),
+                selectedColor: _petrolBlue.withValues(alpha: 0.16),
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(
+                  color: isSelected ? _petrolBlue : Colors.black87,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
                 label: Text(gender.display),
-                selected: _selectedGender == gender,
+                selected: isSelected,
                 onSelected: (selected) {
                   setState(() => _selectedGender = selected ? gender : null);
                 },
@@ -155,7 +284,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         : null;
     _selectedFuelType ??= FuelType.ron95;
 
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,7 +417,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   // ✅ STEP 3: Confirm
   Widget _buildStep3ConfirmPage() {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,17 +502,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       return;
     }
 
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (_currentStep < 2) {
+      setState(() => _currentStep += 1);
+    }
   }
 
   void _previousStep() {
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (_currentStep > 0) {
+      setState(() => _currentStep -= 1);
+    }
   }
 
   Future<void> _completeSetup() async {
