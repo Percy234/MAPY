@@ -13,17 +13,29 @@ class PersonalScreen extends StatefulWidget {
 }
 
 class _PersonalScreenState extends State<PersonalScreen> {
+  static const Color _petrolBlue = Color(0xFF005BAC);
+
   final UserProfileRepository _profileRepository = UserProfileRepository();
   final VehicleRepository _vehicleRepository = VehicleRepository();
+  final TextEditingController _vehicleSearchController =
+      TextEditingController();
 
   bool _isLoading = true;
   UserProfileModel? _profile;
   List<VehicleModel> _vehicles = const <VehicleModel>[];
+  bool _isVehicleSearchVisible = false;
+  String _vehicleSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _vehicleSearchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -63,31 +75,72 @@ class _PersonalScreenState extends State<PersonalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cá nhân'),
-        actions: [
-          IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
-        ],
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 8),
+            _buildHeaderSection(context),
+            const SizedBox(height: 16),
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else ...[
+              _buildProfileSection(),
+              const SizedBox(height: 16),
+              _buildActiveVehicleSection(),
+              const SizedBox(height: 16),
+              _buildVehicleListSection(),
+            ],
+          ],
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildProfileSection(),
-                  const SizedBox(height: 16),
-                  _buildActiveVehicleSection(),
-                  const SizedBox(height: 16),
-                  _buildVehicleListSection(),
-                ],
-              ),
+    );
+  }
+
+  Widget _buildHeaderSection(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Cá nhân',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _loadData,
+                  tooltip: 'Làm mới dữ liệu',
+                  icon: const Icon(Icons.refresh, color: _petrolBlue),
+                ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddVehicleDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Thêm phương tiện'),
+            const SizedBox(height: 6),
+            Text(
+              'Tài khoản và phương tiện',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Quản lý thông tin cá nhân, phương tiện chính và danh sách phương tiện của bạn.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -135,9 +188,11 @@ class _PersonalScreenState extends State<PersonalScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text('Họ tên: ${_profile!.fullName}'),
-            Text('Giới tính: ${_profile!.gender.display}'),
+            const SizedBox(height: 12),
+            _buildInfoGrid([
+              MapEntry('Họ tên', _profile!.fullName),
+              MapEntry('Giới tính', _profile!.gender.display),
+            ]),
           ],
         ),
       ),
@@ -146,6 +201,9 @@ class _PersonalScreenState extends State<PersonalScreen> {
 
   Widget _buildActiveVehicleSection() {
     final activeVehicle = _activeVehicle;
+    final fuelConsumptionText = activeVehicle == null
+        ? 'Chưa chọn'
+        : '${(activeVehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km';
 
     return Card(
       child: Padding(
@@ -157,25 +215,66 @@ class _PersonalScreenState extends State<PersonalScreen> {
               'Phương tiện đang dùng',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
-            if (activeVehicle == null)
-              const Text('Chưa có phương tiện nào được chọn.')
-            else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activeVehicle.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('Loại: ${activeVehicle.vehicleType.display}'),
-                  Text('Nhiên liệu: ${activeVehicle.fuelType.display}'),
-                  Text(
-                    'Tiêu hao: ${(activeVehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km',
-                  ),
-                ],
+            const SizedBox(height: 12),
+            _buildInfoGrid([
+              MapEntry('Tên phương tiện', activeVehicle?.name ?? 'Chưa chọn'),
+              MapEntry('Loại', activeVehicle?.vehicleType.display ?? 'Chưa chọn'),
+              MapEntry('Nhiên liệu', activeVehicle?.fuelType.display ?? 'Chưa chọn'),
+              MapEntry('Tiêu hao', fuelConsumptionText),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoGrid(List<MapEntry<String, String>> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: items
+              .map(
+                (item) => SizedBox(
+                  width: cardWidth,
+                  child: _buildInfoItemCard(item.key, item.value),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoItemCard(String label, String value) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: _petrolBlue),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
               ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value.isEmpty ? 'Chưa nhập' : value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       ),
@@ -183,62 +282,232 @@ class _PersonalScreenState extends State<PersonalScreen> {
   }
 
   Widget _buildVehicleListSection() {
+    final normalizedQuery = _vehicleSearchQuery.trim().toLowerCase();
+    final filteredVehicles = normalizedQuery.isEmpty
+        ? _vehicles
+        : _vehicles.where((vehicle) {
+            final keywords =
+                '${vehicle.name} ${vehicle.vehicleType.display} ${vehicle.fuelType.display}'
+                    .toLowerCase();
+            return keywords.contains(normalizedQuery);
+          }).toList(growable: false);
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Danh sách phương tiện',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Danh sách phương tiện',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                SizedBox(
+                  width: 132,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isVehicleSearchVisible = !_isVehicleSearchVisible;
+                        if (!_isVehicleSearchVisible) {
+                          _vehicleSearchQuery = '';
+                          _vehicleSearchController.clear();
+                        }
+                      });
+                    },
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: const Size(132, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    icon: Icon(
+                      _isVehicleSearchVisible ? Icons.close : Icons.search,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _isVehicleSearchVisible ? 'Đóng tìm' : 'Tìm kiếm',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _showAddVehicleDialog,
+                  style: ElevatedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size(40, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  child: const Icon(Icons.add, size: 18),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
-            if (_vehicles.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
+            if (_isVehicleSearchVisible) ...[
+              TextField(
+                controller: _vehicleSearchController,
+                onChanged: (value) {
+                  setState(() {
+                    _vehicleSearchQuery = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Tìm theo tên, loại, nhiên liệu',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _vehicleSearchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _vehicleSearchQuery = '';
+                              _vehicleSearchController.clear();
+                            });
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (filteredVehicles.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  'Chưa có phương tiện. Bấm "Thêm phương tiện" để tạo mới.',
+                  normalizedQuery.isEmpty
+                      ? 'Chưa có phương tiện. Bấm "Thêm" để tạo mới.'
+                      : 'Không tìm thấy phương tiện phù hợp.',
                 ),
               )
             else
-              ..._vehicles.map((vehicle) {
+              ...filteredVehicles.map((vehicle) {
                 final isActive = vehicle.id == _profile?.activeVehicleId;
-
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    vehicle.vehicleType == VehicleType.car
-                        ? Icons.directions_car
-                        : Icons.two_wheeler,
-                  ),
-                  title: Text(vehicle.name),
-                  subtitle: Text(
-                    '${vehicle.vehicleType.display} - ${vehicle.fuelType.display}\n${(vehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km',
-                  ),
-                  isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'active') {
-                        _setActiveVehicle(vehicle.id);
-                      } else if (value == 'delete') {
-                        _deleteVehicle(vehicle.id);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem<String>(
-                        value: 'active',
-                        enabled: !isActive,
-                        child: const Text('Đặt làm phương tiện chính'),
-                      ),
-                      const PopupMenuItem<String>(
-                        value: 'delete',
-                        child: Text('Xóa phương tiện'),
-                      ),
-                    ],
-                  ),
-                );
+                return _buildVehicleCardItem(vehicle: vehicle, isActive: isActive);
               }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVehicleCardItem({
+    required VehicleModel vehicle,
+    required bool isActive,
+  }) {
+    final fuelConsumptionText =
+        '${(vehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SizedBox(
+        width: double.infinity,
+        child: Card(
+          margin: EdgeInsets.zero,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          color: isActive ? _petrolBlue.withValues(alpha: 0.05) : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isActive
+                  ? _petrolBlue
+                  : _petrolBlue.withValues(alpha: 0.25),
+              width: isActive ? 1.8 : 1,
+            ),
+          ),
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      vehicle.vehicleType == VehicleType.car
+                          ? Icons.directions_car
+                          : Icons.two_wheeler,
+                      color: _petrolBlue,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        vehicle.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'active') {
+                          _setActiveVehicle(vehicle.id);
+                        } else if (value == 'delete') {
+                          _deleteVehicle(vehicle.id);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'active',
+                          enabled: !isActive,
+                          child: const Text('Đặt làm phương tiện chính'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Text('Xóa phương tiện'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildVehicleInlineInfo('Loại xe', vehicle.vehicleType.display),
+                    const SizedBox(width: 8),
+                    _buildVehicleInlineInfo('Nhiên liệu', vehicle.fuelType.display),
+                    const SizedBox(width: 8),
+                    _buildVehicleInlineInfo('Tiêu hao', fuelConsumptionText),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVehicleInlineInfo(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: _petrolBlue.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       ),
