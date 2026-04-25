@@ -27,6 +27,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   late TextEditingController _cylinderDisplacementController;
   FuelType? _selectedFuelType;
   late TextEditingController _fuelConsumptionController;
+  String? _fuelConsumptionError;
 
   @override
   void initState() {
@@ -44,6 +45,77 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     _cylinderDisplacementController.dispose();
     _fuelConsumptionController.dispose();
     super.dispose();
+  }
+
+  List<FuelType> _availableFuelTypes(VehicleType type) {
+    switch (type) {
+      case VehicleType.motorbike:
+        return const [FuelType.e5Ron92, FuelType.ron95];
+      case VehicleType.car:
+        return const [
+          FuelType.ron95,
+          FuelType.ron95V,
+          FuelType.e10Ron95III,
+          FuelType.diesel,
+          FuelType.diesel0001SV,
+          FuelType.electric,
+        ];
+      case VehicleType.truck:
+        return const [
+          FuelType.diesel,
+          FuelType.diesel0001SV,
+          FuelType.electric,
+        ];
+      case VehicleType.bus:
+        return const [
+          FuelType.diesel,
+          FuelType.diesel0001SV,
+          FuelType.electric,
+        ];
+    }
+  }
+
+  List<String> _availableCylinderOptions(VehicleType type) {
+    switch (type) {
+      case VehicleType.car:
+        return const ['1.0L', '1.2L', '1.5L', '2.0L', '2.5L', '3.0L'];
+      case VehicleType.truck:
+      case VehicleType.bus:
+        return const ['2.5L', '3.0L', '4.0L', '5.0L'];
+      case VehicleType.motorbike:
+        return const [
+          '100cc',
+          '110cc',
+          '125cc',
+          '150cc',
+          '175cc',
+          '250cc',
+          '300cc',
+          '350cc',
+        ];
+    }
+  }
+
+  String? _validateFuelConsumption(
+    String rawValue, {
+    bool requireValue = false,
+  }) {
+    final normalized = rawValue.trim().replaceAll(',', '.');
+
+    if (normalized.isEmpty) {
+      return requireValue ? 'Vui lòng nhập mức tiêu hao' : null;
+    }
+
+    final value = double.tryParse(normalized);
+    if (value == null) {
+      return 'Mức tiêu hao phải là số hợp lệ';
+    }
+
+    if (value <= 0) {
+      return 'Mức tiêu hao phải lớn hơn 0';
+    }
+
+    return null;
   }
 
   @override
@@ -137,24 +209,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: Column(
+                        child: Row(
                           children: [
-                            if (_currentStep > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: TextButton.icon(
+                            if (_currentStep > 0) ...[
+                              Expanded(
+                                child: OutlinedButton(
                                   onPressed: _previousStep,
-                                  icon: const Icon(Icons.arrow_back),
-                                  label: const Text('Quay lại'),
+                                  style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(48),
+                                  ),
+                                  child: const Text('Quay lại'),
                                 ),
                               ),
-                            SizedBox(
-                              width: double.infinity,
+                              const SizedBox(width: 12),
+                            ],
+                            Expanded(
                               child: ElevatedButton(
                                 onPressed: _currentStep < 2
                                     ? _nextStep
                                     : _completeSetup,
                                 style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
                                   backgroundColor: _petrolBlue,
                                   foregroundColor: Colors.white,
                                 ),
@@ -266,23 +341,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   // 🚗 STEP 2: Vehicle
   Widget _buildStep2VehiclePage() {
-    final cylinderDisplacementOptions = [
-      '100cc',
-      '110cc',
-      '125cc',
-      '150cc',
-      '175cc',
-      '250cc',
-      '300cc',
-      '350cc',
-    ];
-
-    // Set mặc định nếu chưa chọn (sử dụng ??= operator)
     _selectedVehicleType ??= VehicleType.motorbike;
-    _cylinderDisplacementController.text == ''
-        ? _cylinderDisplacementController.text = '125cc'
-        : null;
-    _selectedFuelType ??= FuelType.ron95;
+    final selectedVehicleType = _selectedVehicleType!;
+    final cylinderDisplacementOptions = _availableCylinderOptions(
+      selectedVehicleType,
+    );
+    if (_cylinderDisplacementController.text.isEmpty ||
+        !cylinderDisplacementOptions.contains(
+          _cylinderDisplacementController.text,
+        )) {
+      _cylinderDisplacementController.text = cylinderDisplacementOptions.first;
+    }
+
+    final availableFuelTypes = _availableFuelTypes(selectedVehicleType);
+    if (_selectedFuelType == null ||
+        !availableFuelTypes.contains(_selectedFuelType)) {
+      _selectedFuelType = availableFuelTypes.first;
+    }
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -303,18 +378,47 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [VehicleType.motorbike, VehicleType.car].map((type) {
+              final isSelected = _selectedVehicleType == type;
               return ChoiceChip(
-                avatar: Icon(
-                  type == VehicleType.car
-                      ? Icons.directions_car
-                      : Icons.two_wheeler,
-                  size: 18,
+                showCheckmark: false,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? _petrolBlue
+                      : _petrolBlue.withValues(alpha: 0.35),
+                ),
+                selectedColor: _petrolBlue.withValues(alpha: 0.16),
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(
+                  color: isSelected ? _petrolBlue : Colors.black87,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
                 label: Text(type.display),
-                selected: _selectedVehicleType == type,
+                selected: isSelected,
                 onSelected: (selected) {
-                  setState(() => _selectedVehicleType = selected ? type : null);
+                  if (!selected) {
+                    return;
+                  }
+                  setState(() {
+                    _selectedVehicleType = type;
+
+                    final nextFuelOptions = _availableFuelTypes(type);
+                    if (!nextFuelOptions.contains(_selectedFuelType)) {
+                      _selectedFuelType = nextFuelOptions.first;
+                    }
+
+                    final nextCylinderOptions = _availableCylinderOptions(type);
+                    if (!nextCylinderOptions.contains(
+                      _cylinderDisplacementController.text,
+                    )) {
+                      _cylinderDisplacementController.text =
+                          nextCylinderOptions.first;
+                    }
+                  });
                 },
               );
             }).toList(),
@@ -323,15 +427,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: 24),
 
           // 📝 Tên phương tiện
+          const Text(
+            'Tên phương tiện',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _vehicleNameController,
             decoration: InputDecoration(
-              labelText: 'Tên phương tiện',
               hintText: 'Ví dụ: Honda SH 150',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              prefixIcon: const Icon(Icons.label),
             ),
           ),
 
@@ -347,9 +454,25 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             spacing: 8,
             runSpacing: 8,
             children: cylinderDisplacementOptions.map((cc) {
+              final isSelected = _cylinderDisplacementController.text == cc;
               return ChoiceChip(
+                showCheckmark: false,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? _petrolBlue
+                      : _petrolBlue.withValues(alpha: 0.35),
+                ),
+                selectedColor: _petrolBlue.withValues(alpha: 0.16),
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(
+                  color: isSelected ? _petrolBlue : Colors.black87,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
                 label: Text(cc),
-                selected: _cylinderDisplacementController.text == cc,
+                selected: isSelected,
                 onSelected: (selected) {
                   setState(() {
                     _cylinderDisplacementController.text = selected ? cc : '';
@@ -369,12 +492,32 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
-            children: FuelType.values.map((fuel) {
+            runSpacing: 8,
+            children: availableFuelTypes.map((fuel) {
+              final isSelected = _selectedFuelType == fuel;
               return ChoiceChip(
+                showCheckmark: false,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                side: BorderSide(
+                  color: isSelected
+                      ? _petrolBlue
+                      : _petrolBlue.withValues(alpha: 0.35),
+                ),
+                selectedColor: _petrolBlue.withValues(alpha: 0.16),
+                backgroundColor: Colors.white,
+                labelStyle: TextStyle(
+                  color: isSelected ? _petrolBlue : Colors.black87,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
                 label: Text(fuel.display),
-                selected: _selectedFuelType == fuel,
+                selected: isSelected,
                 onSelected: (selected) {
-                  setState(() => _selectedFuelType = selected ? fuel : null);
+                  if (!selected) {
+                    return;
+                  }
+                  setState(() => _selectedFuelType = fuel);
                 },
               );
             }).toList(),
@@ -383,31 +526,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           const SizedBox(height: 24),
 
           // 💨 Mức tiêu hao (TextField với gợi ý)
+          const Text(
+            'Mức tiêu hao nhiên liệu',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _fuelConsumptionController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (value) {
+              setState(() {
+                _fuelConsumptionError = _validateFuelConsumption(value);
+              });
+            },
             decoration: InputDecoration(
-              labelText: 'Mức tiêu hao',
-              hintText: 'Ví dụ: Xe máy thường 3.5-4.5',
+              hintText: selectedVehicleType == VehicleType.car
+                  ? 'Ví dụ: Ô tô thường 6.5-8.5'
+                  : 'Ví dụ: Xe máy thường 3.5-4.5',
               suffixText: 'L/100km',
+              errorText: _fuelConsumptionError,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              prefixIcon: const Icon(Icons.local_gas_station),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.amber.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.shade300),
-            ),
-            child: const Text(
-              '💡 Mức tiêu hao trung bình xe máy: 3.5-4.5 L/100km',
-              style: TextStyle(fontSize: 12, color: Colors.amber),
             ),
           ),
         ],
@@ -428,60 +568,124 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
           const SizedBox(height: 24),
           // Profile info
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Thông tin cá nhân',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 12),
-                  Text('Họ và tên: ${_fullNameController.text}'),
-                  Text('Giới tính: ${_selectedGender?.display ?? "Chưa chọn"}'),
-                ],
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Thông tin cá nhân',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoGrid([
+                      MapEntry('Họ và tên', _fullNameController.text),
+                      MapEntry(
+                        'Giới tính',
+                        _selectedGender?.display ?? 'Chưa chọn',
+                      ),
+                    ]),
+                  ],
+                ),
               ),
             ),
           ),
           const SizedBox(height: 16),
           // Vehicle info
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Thông tin phương tiện',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 12),
-                  Text('Loại: ${_selectedVehicleType?.display ?? "Chưa chọn"}'),
-                  Text('Tên: ${_vehicleNameController.text}'),
-                  Text('Dung tích: ${_cylinderDisplacementController.text} cc'),
-                  Text(
-                    'Nhiên liệu: ${_selectedFuelType?.display ?? "Chưa chọn"}',
-                  ),
-                  Text('Tiêu hao: ${_fuelConsumptionController.text} L/100km'),
-                ],
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Thông tin phương tiện',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoGrid([
+                      MapEntry(
+                        'Loại',
+                        _selectedVehicleType?.display ?? 'Chưa chọn',
+                      ),
+                      MapEntry('Tên', _vehicleNameController.text),
+                      MapEntry(
+                        'Dung tích',
+                        '${_cylinderDisplacementController.text} cc',
+                      ),
+                      MapEntry(
+                        'Nhiên liệu',
+                        _selectedFuelType?.display ?? 'Chưa chọn',
+                      ),
+                      MapEntry(
+                        'Tiêu hao',
+                        '${_fuelConsumptionController.text} L/100km',
+                      ),
+                    ]),
+                  ],
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              '✓ Sau khi hoàn tất, bạn có thể thay đổi thông tin này trong phần Cài đặt sau này.',
-              style: TextStyle(color: Colors.blue, fontSize: 12),
-            ),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInfoGrid(List<MapEntry<String, String>> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: items
+              .map(
+                (item) => SizedBox(
+                  width: cardWidth,
+                  child: _buildInfoItemCard(item.key, item.value),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoItemCard(String label, String value) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: _petrolBlue),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value.isEmpty ? 'Chưa nhập' : value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -493,13 +697,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       return;
     }
 
-    if (_currentStep == 1 &&
-        (_selectedVehicleType == null ||
-            _vehicleNameController.text.isEmpty ||
-            _selectedFuelType == null ||
-            _fuelConsumptionController.text.isEmpty)) {
-      _showSnackbar('Vui lòng điền đầy đủ thông tin phương tiện');
-      return;
+    if (_currentStep == 1) {
+      final fuelConsumptionError = _validateFuelConsumption(
+        _fuelConsumptionController.text,
+        requireValue: true,
+      );
+
+      if (_selectedVehicleType == null ||
+          _vehicleNameController.text.isEmpty ||
+          _selectedFuelType == null) {
+        _showSnackbar('Vui lòng điền đầy đủ thông tin phương tiện');
+        return;
+      }
+
+      if (fuelConsumptionError != null) {
+        setState(() => _fuelConsumptionError = fuelConsumptionError);
+        _showSnackbar(fuelConsumptionError);
+        return;
+      }
     }
 
     if (_currentStep < 2) {
@@ -523,8 +738,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           .replaceAll(',', '.');
       final fuelConsumption = double.tryParse(normalizedFuelConsumptionInput);
 
-      if (fuelConsumption == null || fuelConsumption <= 0) {
-        _showSnackbar('Mức tiêu hao không hợp lệ. Ví dụ: 3.8');
+      final fuelConsumptionError = _validateFuelConsumption(
+        _fuelConsumptionController.text,
+        requireValue: true,
+      );
+      if (fuelConsumptionError != null ||
+          fuelConsumption == null ||
+          fuelConsumption <= 0) {
+        setState(() => _fuelConsumptionError = fuelConsumptionError);
+        _showSnackbar(fuelConsumptionError ?? 'Mức tiêu hao không hợp lệ');
         return;
       }
 

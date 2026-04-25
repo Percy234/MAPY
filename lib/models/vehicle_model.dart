@@ -14,9 +14,15 @@ enum VehicleType {
 }
 
 enum FuelType {
-  e5Ron92('Xăng E5 RON92'),
-  ron95('Xăng RON95'),
-  diesel('Dầu Diesel');
+  e5Ron92('Xăng E5 RON 92-II'),
+  ron95('Xăng RON 95-III'),
+  diesel('DO 0,05S-II'),
+  hybrid('Hybrid (xăng)'),
+  electric('Điện'),
+  ron95V('Xăng RON 95-V'),
+  e10Ron95III('Xăng E10 RON 95-III'),
+  diesel0001SV('DO 0,001S-V'),
+  kerosene2K('Dầu hỏa 2-K');
 
   final String display;
   const FuelType(this.display);
@@ -53,8 +59,8 @@ class VehicleModel extends HiveObject {
     required this.fuelConsumption,
     DateTime? createdAt,
     this.modifiedAt,
-  })  : id = id ?? const Uuid().v4(),
-        createdAt = createdAt ?? DateTime.now();
+  }) : id = id ?? const Uuid().v4(),
+       createdAt = createdAt ?? DateTime.now();
 
   factory VehicleModel.create({
     String? id,

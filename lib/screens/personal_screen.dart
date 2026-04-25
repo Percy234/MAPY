@@ -66,10 +66,7 @@ class _PersonalScreenState extends State<PersonalScreen> {
       appBar: AppBar(
         title: const Text('Cá nhân'),
         actions: [
-          IconButton(
-            onPressed: _loadData,
-            icon: const Icon(Icons.refresh),
-          ),
+          IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: _isLoading
@@ -108,7 +105,9 @@ class _PersonalScreenState extends State<PersonalScreen> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
-              Text('Chưa có dữ liệu tài khoản. Hãy chạy onboarding để thiết lập.'),
+              Text(
+                'Chưa có dữ liệu tài khoản. Hãy chạy onboarding để thiết lập.',
+              ),
             ],
           ),
         ),
@@ -165,11 +164,16 @@ class _PersonalScreenState extends State<PersonalScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(activeVehicle.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    activeVehicle.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 4),
                   Text('Loại: ${activeVehicle.vehicleType.display}'),
                   Text('Nhiên liệu: ${activeVehicle.fuelType.display}'),
-                  Text('Tiêu hao: ${(activeVehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km'),
+                  Text(
+                    'Tiêu hao: ${(activeVehicle.fuelConsumption * 100).toStringAsFixed(2)} L/100km',
+                  ),
                 ],
               ),
           ],
@@ -193,7 +197,9 @@ class _PersonalScreenState extends State<PersonalScreen> {
             if (_vehicles.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8),
-                child: Text('Chưa có phương tiện. Bấm "Thêm phương tiện" để tạo mới.'),
+                child: Text(
+                  'Chưa có phương tiện. Bấm "Thêm phương tiện" để tạo mới.',
+                ),
               )
             else
               ..._vehicles.map((vehicle) {
@@ -325,8 +331,31 @@ class _PersonalScreenState extends State<PersonalScreen> {
     final nameController = TextEditingController();
     final consumptionController = TextEditingController();
 
+    List<FuelType> fuelOptionsFor(VehicleType type) {
+      switch (type) {
+        case VehicleType.motorbike:
+          return const [FuelType.e5Ron92, FuelType.ron95];
+        case VehicleType.car:
+          return const [
+            FuelType.ron95,
+            FuelType.ron95V,
+            FuelType.e10Ron95III,
+            FuelType.diesel,
+            FuelType.diesel0001SV,
+            FuelType.electric,
+          ];
+        case VehicleType.truck:
+        case VehicleType.bus:
+          return const [
+            FuelType.diesel,
+            FuelType.diesel0001SV,
+            FuelType.electric,
+          ];
+      }
+    }
+
     VehicleType selectedType = VehicleType.motorbike;
-    FuelType selectedFuel = FuelType.ron95;
+    FuelType selectedFuel = fuelOptionsFor(selectedType).first;
 
     await showDialog<void>(
       context: context,
@@ -341,12 +370,16 @@ class _PersonalScreenState extends State<PersonalScreen> {
                   children: [
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Tên phương tiện'),
+                      decoration: const InputDecoration(
+                        labelText: 'Tên phương tiện',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<VehicleType>(
                       initialValue: selectedType,
-                      decoration: const InputDecoration(labelText: 'Loại phương tiện'),
+                      decoration: const InputDecoration(
+                        labelText: 'Loại phương tiện',
+                      ),
                       items: const [
                         DropdownMenuItem(
                           value: VehicleType.motorbike,
@@ -363,14 +396,20 @@ class _PersonalScreenState extends State<PersonalScreen> {
                         }
                         setDialogState(() {
                           selectedType = value;
+                          final nextFuelOptions = fuelOptionsFor(selectedType);
+                          if (!nextFuelOptions.contains(selectedFuel)) {
+                            selectedFuel = nextFuelOptions.first;
+                          }
                         });
                       },
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<FuelType>(
                       initialValue: selectedFuel,
-                      decoration: const InputDecoration(labelText: 'Loại nhiên liệu'),
-                      items: FuelType.values
+                      decoration: const InputDecoration(
+                        labelText: 'Loại nhiên liệu',
+                      ),
+                      items: fuelOptionsFor(selectedType)
                           .map(
                             (fuel) => DropdownMenuItem<FuelType>(
                               value: fuel,
@@ -390,7 +429,9 @@ class _PersonalScreenState extends State<PersonalScreen> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: consumptionController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Tiêu hao (L/100km)',
                       ),
@@ -406,10 +447,13 @@ class _PersonalScreenState extends State<PersonalScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     final name = nameController.text.trim();
-                    final consumption100 =
-                        double.tryParse(consumptionController.text.trim());
+                    final consumption100 = double.tryParse(
+                      consumptionController.text.trim(),
+                    );
 
-                    if (name.isEmpty || consumption100 == null || consumption100 <= 0) {
+                    if (name.isEmpty ||
+                        consumption100 == null ||
+                        consumption100 <= 0) {
                       return;
                     }
 
@@ -463,8 +507,9 @@ class _PersonalScreenState extends State<PersonalScreen> {
     final profile = _profile;
     if (profile != null && profile.activeVehicleId == vehicleId) {
       final remainingVehicles = await _vehicleRepository.getAllVehicles();
-      final nextActiveVehicleId =
-          remainingVehicles.isNotEmpty ? remainingVehicles.first.id : null;
+      final nextActiveVehicleId = remainingVehicles.isNotEmpty
+          ? remainingVehicles.first.id
+          : null;
       await _profileRepository.updateProfile(
         profile.copyWith(activeVehicleId: nextActiveVehicleId),
       );
