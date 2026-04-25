@@ -43,7 +43,10 @@ class HomeScreen extends ConsumerWidget {
           expenses.fold<double>(0.0, (sum, expense) => sum + expense.distance),
       orElse: () => 0,
     );
-    final totalDistanceKm = math.max(distanceFromTracking, distanceFromExpenses);
+    final totalDistanceKm = math.max(
+      distanceFromTracking,
+      distanceFromExpenses,
+    );
 
     final rawLatestSpeedKmh = (currentLocation?.speed ?? 0) * 3.6;
     final latestSpeedKmh = rawLatestSpeedKmh < 0 ? 0.0 : rawLatestSpeedKmh;
@@ -85,7 +88,8 @@ class HomeScreen extends ConsumerWidget {
         ? 'Đang tải...'
         : '${currencyFormatter.format(totalTodayCost.round())}đ';
 
-    final estimatedFuelText = '${(totalDistanceKm * fuelConsumptionPerKm).toStringAsFixed(2)}L';
+    final estimatedFuelText =
+        '${(totalDistanceKm * fuelConsumptionPerKm).toStringAsFixed(2)}L';
 
     final recentlyVisitedPlaces =
         places
@@ -156,12 +160,12 @@ class HomeScreen extends ConsumerWidget {
             value: '',
             customValue: (dailyDistance.isLoading && todayExpenses.isLoading)
                 ? Text(
-                'Đang tải...',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: _petrolBlue,
-                  fontWeight: FontWeight.w700,
-                ),
-                )
+                    'Đang tải...',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: _petrolBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
                 : _buildDistanceValue(
                     context,
                     number: totalDistanceKm.toStringAsFixed(2),
@@ -516,13 +520,17 @@ class HomeScreen extends ConsumerWidget {
     }
 
     final matchedPrice = switch (vehicle.fuelType) {
-      FuelType.e5Ron92 => findByKeywords(['E5 RON 92']),
-      FuelType.ron95 =>
-        findByKeywords(['RON 95-III']) ??
-            findByKeywords(['RON 95-V', 'RON 95']),
-      FuelType.diesel =>
-        findByKeywords(['DO 0,05S-II']) ??
-            findByKeywords(['DO 0,001S-V', 'DO 0.001S-V']),
+      FuelType.e5Ron92 =>
+        findByKeywords(['E5 RON 92-II']) ?? findByKeywords(['E5 RON 92']),
+      FuelType.ron95 => findByKeywords(['RON 95-III']),
+      FuelType.diesel => findByKeywords(['DO 0,05S-II']),
+      FuelType.hybrid => findByKeywords(['RON 95-III']),
+      FuelType.electric => null,
+      FuelType.ron95V => findByKeywords(['RON 95-V']),
+      FuelType.e10Ron95III => findByKeywords(['E10 RON 95-III']),
+      FuelType.diesel0001SV =>
+        findByKeywords(['DO 0,001S-V']) ?? findByKeywords(['DO 0.001S-V']),
+      FuelType.kerosene2K => findByKeywords(['DẦU HỎA 2-K', 'DAU HOA 2-K']),
     };
 
     if (matchedPrice == null) {

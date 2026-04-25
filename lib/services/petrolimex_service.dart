@@ -150,7 +150,44 @@ class PetrolimexService {
 
     final mapped = <FuelPriceModel>[];
 
-    final e5 = findByKeywords(['E5 RON 92']);
+    final ron95V = findByKeywords(['RON 95-V']);
+    if (ron95V != null) {
+      mapped.add(
+        FuelPriceModel.create(
+          fuelType: FuelType.ron95V,
+          price: ron95V.zone1Price,
+          updatedAt: ron95V.updatedAt,
+          source: 'Petrolimex',
+        ),
+      );
+    }
+
+    final ron95III = findByKeywords(['RON 95-III']);
+    if (ron95III != null) {
+      mapped.add(
+        FuelPriceModel.create(
+          fuelType: FuelType.ron95,
+          price: ron95III.zone1Price,
+          updatedAt: ron95III.updatedAt,
+          source: 'Petrolimex',
+        ),
+      );
+    }
+
+    final e10Ron95III = findByKeywords(['E10 RON 95-III']);
+    if (e10Ron95III != null) {
+      mapped.add(
+        FuelPriceModel.create(
+          fuelType: FuelType.e10Ron95III,
+          price: e10Ron95III.zone1Price,
+          updatedAt: e10Ron95III.updatedAt,
+          source: 'Petrolimex',
+        ),
+      );
+    }
+
+    final e5 =
+        findByKeywords(['E5 RON 92-II']) ?? findByKeywords(['E5 RON 92']);
     if (e5 != null) {
       mapped.add(
         FuelPriceModel.create(
@@ -162,29 +199,38 @@ class PetrolimexService {
       );
     }
 
-    final ron95 =
-        findByKeywords(['RON 95-III']) ??
-        findByKeywords(['RON 95-V', 'RON 95']);
-    if (ron95 != null) {
+    final do0001SV =
+        findByKeywords(['DO 0,001S-V']) ?? findByKeywords(['DO 0.001S-V']);
+    if (do0001SV != null) {
       mapped.add(
         FuelPriceModel.create(
-          fuelType: FuelType.ron95,
-          price: ron95.zone1Price,
-          updatedAt: ron95.updatedAt,
+          fuelType: FuelType.diesel0001SV,
+          price: do0001SV.zone1Price,
+          updatedAt: do0001SV.updatedAt,
           source: 'Petrolimex',
         ),
       );
     }
 
-    final diesel =
-        findByKeywords(['DO 0,05S-II']) ??
-        findByKeywords(['DO 0,001S-V', 'DO 0.001S-V']);
+    final diesel = findByKeywords(['DO 0,05S-II']);
     if (diesel != null) {
       mapped.add(
         FuelPriceModel.create(
           fuelType: FuelType.diesel,
           price: diesel.zone1Price,
           updatedAt: diesel.updatedAt,
+          source: 'Petrolimex',
+        ),
+      );
+    }
+
+    final kerosene = findByKeywords(['DẦU HỎA 2-K', 'DAU HOA 2-K']);
+    if (kerosene != null) {
+      mapped.add(
+        FuelPriceModel.create(
+          fuelType: FuelType.kerosene2K,
+          price: kerosene.zone1Price,
+          updatedAt: kerosene.updatedAt,
           source: 'Petrolimex',
         ),
       );

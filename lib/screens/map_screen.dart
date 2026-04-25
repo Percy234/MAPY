@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import '../models/expense_model.dart';
+import '../models/fuel_price_model.dart';
 import '../models/place_model.dart';
 import '../models/route_model.dart';
 import '../models/vehicle_model.dart';
@@ -1567,21 +1568,75 @@ class _MapScreenState extends ConsumerState<MapScreen>
   }
 
   Future<double> _resolveFuelPrice(FuelType fuelType) async {
-    final latestPrices = await _fuelPriceRepository.getLatestPrices();
+    if (fuelType == FuelType.electric) {
+      return 0;
+    }
 
-    for (final price in latestPrices) {
-      if (price.fuelType == fuelType && price.price > 0) {
-        return price.price;
+    var latestPrices = await _fuelPriceRepository.getLatestPrices();
+    var resolvedPrice = _findFuelPriceFromSnapshot(latestPrices, fuelType);
+    if (resolvedPrice > 0) {
+      return resolvedPrice;
+    }
+
+    final shouldRefresh =
+        latestPrices.isEmpty || await _fuelPriceRepository.shouldRefresh();
+
+    if (shouldRefresh || resolvedPrice <= 0) {
+      try {
+        final fetchedPrices = await ref
+            .read(petrolimexServiceProvider)
+            .fetchFuelPrices();
+        if (fetchedPrices.isNotEmpty) {
+          await _fuelPriceRepository.updatePrices(fetchedPrices);
+          latestPrices = await _fuelPriceRepository.getLatestPrices();
+          resolvedPrice = _findFuelPriceFromSnapshot(latestPrices, fuelType);
+          if (resolvedPrice > 0) {
+            return resolvedPrice;
+          }
+        }
+      } catch (_) {
+        // Keep route saving resilient when network/service is unavailable.
       }
     }
 
+    return 0;
+  }
+
+  double _findFuelPriceFromSnapshot(
+    List<FuelPriceModel> latestPrices,
+    FuelType requestedFuelType,
+  ) {
+    final candidates = _fuelTypeCandidates(requestedFuelType);
+    for (final candidate in candidates) {
+      for (final price in latestPrices) {
+        if (price.fuelType == candidate && price.price > 0) {
+          return price.price;
+        }
+      }
+    }
+    return 0;
+  }
+
+  List<FuelType> _fuelTypeCandidates(FuelType fuelType) {
     switch (fuelType) {
       case FuelType.e5Ron92:
-        return 22000;
+        return const [FuelType.e5Ron92];
       case FuelType.ron95:
-        return 23000;
+        return const [FuelType.ron95, FuelType.ron95V, FuelType.e10Ron95III];
       case FuelType.diesel:
-        return 21000;
+        return const [FuelType.diesel, FuelType.diesel0001SV];
+      case FuelType.hybrid:
+        return const [FuelType.ron95, FuelType.ron95V, FuelType.e10Ron95III];
+      case FuelType.electric:
+        return const [FuelType.electric];
+      case FuelType.ron95V:
+        return const [FuelType.ron95V, FuelType.ron95, FuelType.e10Ron95III];
+      case FuelType.e10Ron95III:
+        return const [FuelType.e10Ron95III, FuelType.ron95, FuelType.ron95V];
+      case FuelType.diesel0001SV:
+        return const [FuelType.diesel0001SV, FuelType.diesel];
+      case FuelType.kerosene2K:
+        return const [FuelType.kerosene2K];
     }
   }
 }
