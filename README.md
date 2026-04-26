@@ -44,9 +44,11 @@ This repository supports auto version bump on release PR merge to `main`.
 - Build number (`+n`) in `pubspec.yaml` is always incremented by `+1`.
 - After merge, workflow will:
 	- update `version:` in `pubspec.yaml`
+	- build Android release APK
 	- commit change to `main`
 	- create and push Git tag `v<app_version>`
 	- publish a GitHub Release with generated notes
+	- attach APK in Release Assets with filename format: `mapy-v<app_version>-build<build_number>.apk`
 
 ### Files
 

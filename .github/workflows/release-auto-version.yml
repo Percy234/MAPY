@@ -59,8 +59,34 @@ jobs:
         run: |
           FULL_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           APP_VERSION=${FULL_VERSION%%+*}
+          BUILD_NUMBER=${FULL_VERSION##*+}
           echo "full=${FULL_VERSION}" >> "$GITHUB_OUTPUT"
           echo "app=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java
+        if: steps.bump.outputs.skip != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        if: steps.bump.outputs.skip != 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build release APK
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          flutter --version
+          flutter pub get
+          flutter build apk --release
+
+          mkdir -p artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk "artifacts/mapy-v${{ steps.ver.outputs.app }}-build${{ steps.ver.outputs.build }}.apk"
 
       - name: Commit bumped version
         if: steps.bump.outputs.skip != 'true'
@@ -96,3 +122,5 @@ jobs:
           tag_name: v${{ steps.ver.outputs.app }}
           name: Release v${{ steps.ver.outputs.app }}
           generate_release_notes: true
+          files: |
+            artifacts/mapy-v${{ steps.ver.outputs.app }}-build${{ steps.ver.outputs.build }}.apk
