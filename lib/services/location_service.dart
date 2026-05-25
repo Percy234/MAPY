@@ -36,7 +36,7 @@ class LocationService {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return AndroidSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           forceLocationManager: true,
           distanceFilter: LocationConfig.locationDistanceFilterMeters,
           intervalDuration: const Duration(
@@ -53,7 +53,7 @@ class LocationService {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
         return AppleSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: LocationConfig.locationDistanceFilterMeters,
           pauseLocationUpdatesAutomatically: false,
           showBackgroundLocationIndicator: false,
@@ -62,7 +62,7 @@ class LocationService {
       case TargetPlatform.linux:
       case TargetPlatform.windows:
         return LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: LocationConfig.locationDistanceFilterMeters,
         );
     }
