@@ -65,6 +65,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
   int _lastRoutesSignature = 0;
   final List<LatLng> _liveTracePoints = <LatLng>[];
   final Map<dynamic, PlaceModel> _placeByCircleId = <dynamic, PlaceModel>{};
+  final Map<String, List<LatLng>> _routeGeometryCache =
+      <String, List<LatLng>>{};
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
   final VehicleRepository _vehicleRepository = VehicleRepository();
   final TravelExpenseRepository _travelExpenseRepository =
@@ -108,6 +110,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       _liveTraceLine = null;
       _lastPlacesSignature = 0;
       _lastRoutesSignature = 0;
+      _routeGeometryCache.clear();
       _mapRebuildSeed++;
     });
   }
@@ -444,7 +447,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       _placeByCircleId.clear();
 
       for (final route in routes) {
-        final geometry = _buildGeometryForRoute(route);
+        final geometry = await _buildGeometryForRoute(route);
         if (geometry.length < 2) {
           continue;
         }
@@ -573,7 +576,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
           route.distanceKm,
           route.lastTraveledCount,
           route.lastTraveledDate.millisecondsSinceEpoch,
-          route.traceCoordinates?.length ?? 0,
+          Object.hashAll(route.traceCoordinates ?? const <double>[]),
         ),
       ),
     );
@@ -1348,9 +1351,33 @@ class _MapScreenState extends ConsumerState<MapScreen>
       currentPoint.longitude,
     );
 
-    if (distanceInMeters >= LocationConfig.liveTraceMinDistanceMeters) {
-      _liveTracePoints.add(currentPoint);
+    // Ensure a safe minimum to avoid division by zero
+    final minStep = (LocationConfig.liveTraceMinDistanceMeters <= 0)
+        ? 0.5
+        : LocationConfig.liveTraceMinDistanceMeters;
+
+    if (distanceInMeters < minStep) {
+      return;
     }
+
+    // If the gap between last and current is large, interpolate intermediate
+    // points every `minStep` meters to densify the trace and avoid long
+    // straight segments on the map.
+    final steps = (distanceInMeters / minStep).floor();
+    if (steps > 1) {
+      for (int i = 1; i < steps; i++) {
+        final t = i / steps;
+        final lat =
+            lastPoint.latitude +
+            (currentPoint.latitude - lastPoint.latitude) * t;
+        final lon =
+            lastPoint.longitude +
+            (currentPoint.longitude - lastPoint.longitude) * t;
+        _liveTracePoints.add(LatLng(lat, lon));
+      }
+    }
+
+    _liveTracePoints.add(currentPoint);
   }
 
   Future<void> _detectStoppedPlacesIfNeeded() async {
@@ -1495,13 +1522,36 @@ class _MapScreenState extends ConsumerState<MapScreen>
     return null;
   }
 
-  List<LatLng> _buildGeometryForRoute(RouteModel route) {
-    final trace = route.traceCoordinates;
+  Future<List<LatLng>> _buildGeometryForRoute(RouteModel route) async {
+    final cacheKey = _routeGeometryCacheKey(route);
+    final cachedGeometry = _routeGeometryCache[cacheKey];
+    if (cachedGeometry != null && cachedGeometry.length >= 2) {
+      return cachedGeometry;
+    }
+
+    // Always prioritize the recorded user trace.
+    final tracePoints = _extractTracePoints(route.traceCoordinates);
+    if (tracePoints.length >= 2) {
+      _routeGeometryCache[cacheKey] = tracePoints;
+      return tracePoints;
+    }
+
+    // Backward compatibility for old routes that do not have trace data.
+    final fallbackGeometry = <LatLng>[
+      LatLng(route.startLatitude, route.startLongitude),
+      LatLng(route.endLatitude, route.endLongitude),
+    ];
+    _routeGeometryCache[cacheKey] = fallbackGeometry;
+    return fallbackGeometry;
+  }
+
+  String _routeGeometryCacheKey(RouteModel route) {
+    return '${route.id}:${Object.hashAll(route.traceCoordinates ?? const <double>[])}';
+  }
+
+  List<LatLng> _extractTracePoints(List<double>? trace) {
     if (trace == null || trace.length < 4) {
-      return <LatLng>[
-        LatLng(route.startLatitude, route.startLongitude),
-        LatLng(route.endLatitude, route.endLongitude),
-      ];
+      return const <LatLng>[];
     }
 
     final points = <LatLng>[];
@@ -1516,14 +1566,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       points.add(LatLng(lat, lon));
     }
 
-    if (points.length >= 2) {
-      return points;
-    }
-
-    return <LatLng>[
-      LatLng(route.startLatitude, route.startLongitude),
-      LatLng(route.endLatitude, route.endLongitude),
-    ];
+    return points;
   }
 
   List<double> _flattenTraceCoordinates(List<LatLng> points) {
